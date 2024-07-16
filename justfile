@@ -7,6 +7,9 @@ default:
 run:
     cargo run --bin game
 
+run-release:
+    cargo run --bin game --release
+
 fmt:
     cargo fmt --all
 

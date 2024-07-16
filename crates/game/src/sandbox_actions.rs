@@ -65,42 +65,46 @@ impl Sandbox {
                     x
                 };
 
-                let index = self.size.coords_to_index(x, y);
-
-                let CellState {
-                    action, updated, ..
-                } = cells_actions[index];
-
-                if updated {
-                    continue;
-                }
-
-                match action {
-                    Action::Transform(new_cell) => {
-                        cells_actions[index].updated = true;
-                        self.cells[index] = new_cell;
-                    }
-                    Action::Swap(neighbor_index) => {
-                        // Proceed with swap if neighbor cell is not updated yet.
-                        if cells_actions[neighbor_index].updated {
-                            continue;
-                        }
-                        cells_actions[index].updated = true;
-
-                        // We have to access neighbor again due to borrow checker.
-                        let CellState {
-                            updated: neighbor_updated,
-                            ..
-                        } = &mut cells_actions[neighbor_index];
-                        *neighbor_updated = true;
-
-                        let cell = self.cells[index];
-                        self.cells[index] = self.cells[neighbor_index];
-                        self.cells[neighbor_index] = cell;
-                    }
-                    Action::Idle => {}
-                }
+                self.apply_action_at(&mut cells_actions, x, y);
             }
+        }
+    }
+
+    fn apply_action_at(&mut self, cells_actions: &mut [CellState], x: u16, y: u16) {
+        let index = self.size.coords_to_index(x, y);
+
+        let CellState {
+            action, updated, ..
+        } = cells_actions[index];
+
+        if updated {
+            return;
+        }
+
+        match action {
+            Action::Transform(new_cell) => {
+                cells_actions[index].updated = true;
+                self.cells[index] = new_cell;
+            }
+            Action::Swap(neighbor_index) => {
+                // Proceed with swap if neighbor cell is not updated yet.
+                if cells_actions[neighbor_index].updated {
+                    return;
+                }
+                cells_actions[index].updated = true;
+
+                // We have to access neighbor again due to borrow checker.
+                let CellState {
+                    updated: neighbor_updated,
+                    ..
+                } = &mut cells_actions[neighbor_index];
+                *neighbor_updated = true;
+
+                let cell = self.cells[index];
+                self.cells[index] = self.cells[neighbor_index];
+                self.cells[neighbor_index] = cell;
+            }
+            Action::Idle => {}
         }
     }
 }

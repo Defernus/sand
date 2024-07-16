@@ -1,12 +1,24 @@
 use game::*;
 use macroquad::prelude::*;
 
-#[macroquad::main("Cells")]
-async fn main() {
-    let screen_width = screen_width() as u16;
-    let screen_height = screen_height() as u16;
+fn window_conf() -> Conf {
+    Conf {
+        window_title: "Cells".to_owned(),
+        high_dpi: true,
 
-    let mut state = GameState::new(screen_width, screen_height);
+        ..Default::default()
+    }
+}
+
+#[macroquad::main(window_conf)]
+async fn main() {
+    let dpi_scale = screen_dpi_scale();
+    let width = (screen_width() * dpi_scale) as u16;
+    let height = (screen_height() * dpi_scale) as u16;
+
+    println!("Screen size: {}x{}", width, height);
+
+    let mut state = GameState::new(width, height);
     let sandbox_size = state.sandbox.size();
 
     let mut image = Image::gen_image_color(sandbox_size.width, sandbox_size.height, BLACK);
@@ -30,11 +42,7 @@ async fn main() {
             0.,
             WHITE,
             DrawTextureParams {
-                dest_size: vec2(
-                    (sandbox_size.width * state.pixels_per_cell) as f32,
-                    (sandbox_size.height * state.pixels_per_cell) as f32,
-                )
-                .into(),
+                dest_size: vec2(screen_width(), screen_height()).into(),
                 ..Default::default()
             },
         );

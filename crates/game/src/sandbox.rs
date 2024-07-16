@@ -8,6 +8,7 @@ pub struct Sandbox {
 }
 
 impl Sandbox {
+    #[inline(always)]
     pub fn new(width: u16, height: u16) -> Self {
         let size = SandboxSize { width, height };
         Self {
@@ -16,6 +17,7 @@ impl Sandbox {
         }
     }
 
+    #[inline(always)]
     pub fn size(&self) -> SandboxSize {
         self.size
     }
@@ -31,11 +33,13 @@ impl Sandbox {
         }
     }
 
+    #[inline(always)]
     pub fn set(&mut self, x: u16, y: u16, cell: Cell) {
         let index = self.size.coords_to_index(x, y);
         self.cells[index] = cell;
     }
 
+    #[inline(always)]
     pub fn draw_to_image(&self, image: &mut Image) {
         for (index, cell) in self.cells.iter().enumerate() {
             let (x, y) = self.size.index_to_coords(index);
@@ -44,11 +48,13 @@ impl Sandbox {
         }
     }
 
+    #[inline(always)]
     pub fn tick(&mut self) {
         let cells_actions = self.prepare_actions();
         self.apply_actions(cells_actions);
     }
 
+    #[inline(always)]
     pub fn get(&self, x: u16, y: u16) -> Option<&Cell> {
         self.cells.get(self.size.coords_to_index(x, y))
     }

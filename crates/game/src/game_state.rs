@@ -6,7 +6,6 @@ pub struct GameState {
     pub cell_variants: Vec<Cell>,
     pub selected_cell: usize,
     pub ticks_per_frame: u16,
-    pub pixels_per_cell: u16,
     pub spawn_mode: SpawnMode,
 }
 
@@ -23,14 +22,9 @@ macro_rules! is_pressed {
 }
 
 impl GameState {
-    pub fn new(screen_width: u16, screen_height: u16) -> Self {
-        let pixels_per_cell = 2;
+    pub fn new(width: u16, height: u16) -> Self {
         Self {
-            sandbox: Sandbox::new(
-                screen_width / pixels_per_cell,
-                screen_height / pixels_per_cell,
-            )
-            .with_bottom_wall(),
+            sandbox: Sandbox::new(width, height).with_bottom_wall(),
 
             cell_variants: vec![
                 Cell::Empty,
@@ -45,7 +39,6 @@ impl GameState {
 
             selected_cell: 2,
             ticks_per_frame: 4,
-            pixels_per_cell,
         }
     }
 
@@ -103,8 +96,11 @@ impl GameState {
         if condition {
             let (x, y) = mouse_position();
 
-            let x = x as i16 / self.pixels_per_cell as i16;
-            let y = screen_height() as i16 - (y as i16 / self.pixels_per_cell as i16) - 1;
+            let x = x / screen_width();
+            let y = 1.0 - (y / screen_height());
+
+            let x = (x * self.sandbox.size.width as f32) as i16;
+            let y = (y * self.sandbox.size.height as f32) as i16;
 
             let cell = self.cell_variants[self.selected_cell];
 

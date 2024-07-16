@@ -1,20 +1,19 @@
 use crate::*;
+use macroquad::rand::ChooseRandom;
 
 // TODO - Implement N rules
 /// Check rules in random order
 macro_rules! shuffle_order {
-    ($swap_seed:expr, $rule0:expr, $rule1:expr) => {
+    ($swap_seed:expr, $rule0:expr, $rule1:expr) => {{
         let swap_seed: u16 = $swap_seed;
 
         if swap_seed & 1 == 0 {
-            $rule1;
-            $rule0;
+            $rule1.or_else(|| $rule0)
         } else {
-            $rule0;
-            $rule1;
+            $rule0.or_else(|| $rule1)
         }
-    };
-    ($swap_seed:expr, $rule0:expr, $rule1:expr, $rule2:expr, $rule3:expr) => {
+    }};
+    ($swap_seed:expr, $rule0:expr, $rule1:expr, $rule2:expr, $rule3:expr) => {{
         let swap_seed: u16 = $swap_seed;
         let sub_seed = swap_seed >> 1;
 
@@ -22,71 +21,34 @@ macro_rules! shuffle_order {
             swap_seed,
             shuffle_order!(sub_seed, $rule0, $rule1),
             shuffle_order!(sub_seed, $rule2, $rule3),
-        );
-    };
-    ($swap_seed:expr, $rule0:expr, $rule1:expr, $rule3:expr) => {
+        )
+    }};
+    ($swap_seed:expr, $rule0:expr, $rule1:expr, $rule3:expr) => {{
         let swap_seed: u16 = $swap_seed;
         match swap_seed % 6 {
             0 => {
-                $rule0;
-                $rule1;
-                $rule3;
+                $rule0.or_else(|| $rule1).or_else(|| $rule3)
             }
             1 => {
-                $rule0;
-                $rule3;
-                $rule1;
+                $rule0.or_else(|| $rule3).or_else(|| $rule1)
             }
             2 => {
-                $rule1;
-                $rule0;
-                $rule3;
+                $rule1.or_else(|| $rule0).or_else(|| $rule3)
             }
             3 => {
-                $rule1;
-                $rule3;
-                $rule0;
+                $rule1.or_else(|| $rule3).or_else(|| $rule0)
             }
             4 => {
-                $rule3;
-                $rule0;
-                $rule1;
+                $rule3.or_else(|| $rule0).or_else(|| $rule1)
             }
             5 => {
-                $rule3;
-                $rule1;
-                $rule0;
+                $rule3.or_else(|| $rule1).or_else(|| $rule0)
             }
             value => unreachable!("Impossible `swap_seed % 6` value: {value}"),
         }
-    };
-    ($($rule:expr,)*) => {
+    }};
+    ($($rule:expr,)*) => {{
         shuffle_order!($($rule),*)
-    };
-}
-
-macro_rules! swap_rule {
-    ($ctx:expr, $direction:ident, $($current_is:tt),* => $($neighbor_is:tt),*) => {
-            let direction = Direction::$direction;
-            let neighbor = $ctx.neighbors.get(direction);
-
-            if ($( matches!(neighbor, Cell::$neighbor_is) ||)* false) && ($(matches!($ctx.current_cell, Cell::$current_is) || false )*) {
-                let neighbor_index = $ctx.data.size.relative_dir_to_index_wrapped(
-                    $ctx.current_cell_x,
-                    $ctx.current_cell_y,
-                    direction,
-                );
-                return Some(Action::Swap(neighbor_index));
-            }
-    };
-}
-
-macro_rules! check_neighbors {
-    ($ctx:expr, $direction:ident == $($neighbor_is:ident) ||*) => {{
-        let direction = Direction::$direction;
-        let neighbor = $ctx.neighbors.get(direction);
-
-        $(matches!(neighbor, Cell::$neighbor_is) ||)* false
     }};
 }
 
@@ -100,6 +62,75 @@ pub struct RuleContext<'a> {
 }
 
 impl RuleContext<'_> {
+    /// Return swap action with given direction
+    pub fn swap(&self, dir: Direction) -> Action {
+        let index = self.data.size.relative_dir_to_index_wrapped(
+            self.current_cell_x,
+            self.current_cell_y,
+            dir,
+        );
+        Action::Swap(index)
+    }
+
+    /// Checks rules in random order until one of them returns an action or all rules are checked
+    pub fn shuffle_rules(&self, rules: &[Box<dyn Fn() -> Option<Action>>]) -> Option<Action> {
+        let mut random_indices = (0..rules.len()).collect::<Vec<_>>();
+        random_indices.shuffle();
+
+        for i in random_indices {
+            if let Some(action) = rules[i]() {
+                return Some(action);
+            }
+        }
+
+        None
+    }
+
+    /// Return swap action if neighbor at given direction is contained in expected neighbors list
+    #[inline(always)]
+    pub fn swap_on_any_neighbor<const N: usize>(
+        &self,
+        dir: Direction,
+        expected_neighbors: [Cell; N],
+    ) -> Option<Action> {
+        if expected_neighbors.contains(&self.neighbors.get(dir)) {
+            Some(self.swap(dir))
+        } else {
+            None
+        }
+    }
+
+    /// Return swap action if neighbor at given direction is equal to expected neighbor
+    #[inline(always)]
+    pub fn swap_if_neighbor<const N: usize>(
+        &self,
+        dir: Direction,
+        expected_neighbor: Cell,
+    ) -> Option<Action> {
+        if expected_neighbor == self.neighbors.get(dir) {
+            Some(self.swap(dir))
+        } else {
+            None
+        }
+    }
+
+    /// Check if neighbor at given direction is equal to expected neighbor
+    #[inline(always)]
+    pub fn has_neighbor(&self, dir: Direction, expected_neighbor: Cell) -> bool {
+        expected_neighbor == self.neighbors.get(dir)
+    }
+
+    /// Check if neighbor at given direction is contained in expected neighbors list
+    #[inline(always)]
+    pub fn any_neighbor<const N: usize>(
+        &self,
+        dir: Direction,
+        expected_neighbors: [Cell; N],
+    ) -> bool {
+        expected_neighbors.contains(&self.neighbors.get(dir))
+    }
+
+    #[inline(always)]
     pub fn into_action(self) -> Action {
         self.handle_sand()
             .or_else(|| self.handle_water())
@@ -109,70 +140,90 @@ impl RuleContext<'_> {
     }
 
     fn handle_plant(&self) -> Option<Action> {
-        // seed falls down
-        swap_rule!(self, Down, Seed => Empty, Water);
-
-        // seed becomes plant head on the ground
-        if self.current_cell == Cell::Seed && check_neighbors!(self, Down == Sand || Wall) {
-            return Some(Action::Transform(Cell::PlantHead));
+        match self.current_cell {
+            Cell::Seed => {
+                // seed falls down
+                self.swap_on_any_neighbor(Direction::Down, [Cell::Empty, Cell::Water])
+                    .or_else(|| {
+                        // seed grows into plant head if on ground
+                        self.any_neighbor(Direction::Down, [Cell::Sand, Cell::Wall])
+                            .then_some(Action::Transform(Cell::PlantHead))
+                    })
+            }
+            Cell::PlantHead => {
+                // plant head grows into plant stem if there is empty space above
+                self.has_neighbor(Direction::Up, Cell::Empty)
+                    .then_some(Action::Transform(Cell::PlantStem))
+            }
+            Cell::Empty => {
+                // plant stem grows up
+                self.has_neighbor(Direction::Down, Cell::PlantHead)
+                    .then_some(Action::Transform(Cell::PlantHead))
+            }
+            _ => None,
         }
-
-        // plant head moves up if there is empty space above and leaves stem behind
-        if self.current_cell == Cell::PlantHead && check_neighbors!(self, Up == Empty) {
-            return Some(Action::Transform(Cell::PlantStem));
-        }
-        if self.current_cell == Cell::Empty && check_neighbors!(self, Down == PlantHead) {
-            return Some(Action::Transform(Cell::PlantHead));
-        }
-
-        None
     }
 
     fn handle_sand(&self) -> Option<Action> {
+        if self.current_cell != Cell::Sand {
+            return None;
+        }
+
         // Sand falls down
-        swap_rule!(self, Down, Sand => Empty, Water);
-
-        // Sand falls to the sides
-        shuffle_order!(
-            self.swap_seed,
-            swap_rule!(self, DownLeft, Sand => Empty, Water, Gas),
-            swap_rule!(self, DownRight, Sand => Empty, Water, Gas),
-        );
-
-        None
+        self.swap_on_any_neighbor(Direction::Down, [Cell::Empty, Cell::Water, Cell::Gas])
+            .or_else(|| {
+                // Sand falls to the sides
+                shuffle_order!(
+                    self.swap_seed,
+                    self.swap_on_any_neighbor(
+                        Direction::DownLeft,
+                        [Cell::Empty, Cell::Water, Cell::Gas]
+                    ),
+                    self.swap_on_any_neighbor(
+                        Direction::DownRight,
+                        [Cell::Empty, Cell::Water, Cell::Gas]
+                    ),
+                )
+            })
     }
 
     fn handle_water(&self) -> Option<Action> {
+        if self.current_cell != Cell::Water {
+            return None;
+        }
+
         // Water falls down
-        swap_rule!(self, Down, Water => Empty);
-
-        // Water falls to the sides
-        shuffle_order!(
-            self.swap_seed,
-            swap_rule!(self, DownLeft, Water => Empty, Gas),
-            swap_rule!(self, DownRight, Water => Empty, Gas),
-        );
-
-        // Water flows to the sides
-        shuffle_order!(
-            self.swap_seed,
-            swap_rule!(self, Right, Water => Empty, Gas),
-            swap_rule!(self, Left, Water => Empty, Gas),
-        );
-
-        None
+        self.swap_on_any_neighbor(Direction::Down, [Cell::Empty])
+            .or_else(|| {
+                // Water falls to the sides
+                shuffle_order!(
+                    self.swap_seed,
+                    self.swap_on_any_neighbor(Direction::DownLeft, [Cell::Empty, Cell::Gas]),
+                    self.swap_on_any_neighbor(Direction::DownRight, [Cell::Empty, Cell::Gas]),
+                )
+            })
+            .or_else(|| {
+                // Water flows to the sides
+                shuffle_order!(
+                    self.swap_seed,
+                    self.swap_on_any_neighbor(Direction::Right, [Cell::Empty, Cell::Gas]),
+                    self.swap_on_any_neighbor(Direction::Left, [Cell::Empty, Cell::Gas]),
+                )
+            })
     }
 
     fn handle_gas(&self) -> Option<Action> {
+        if self.current_cell != Cell::Gas {
+            return None;
+        }
+
         // Gas flows in random direction
         shuffle_order!(
             self.swap_seed,
-            swap_rule!(self, Up, Gas => Empty),
-            swap_rule!(self, Down, Gas => Empty),
-            swap_rule!(self, Right, Gas => Empty),
-            swap_rule!(self, Left, Gas => Empty),
-        );
-
-        None
+            self.swap_on_any_neighbor(Direction::Up, [Cell::Empty]),
+            self.swap_on_any_neighbor(Direction::Down, [Cell::Empty]),
+            self.swap_on_any_neighbor(Direction::Right, [Cell::Empty]),
+            self.swap_on_any_neighbor(Direction::Left, [Cell::Empty]),
+        )
     }
 }
