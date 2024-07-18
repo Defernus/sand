@@ -1,40 +1,31 @@
-use crate::*;
+use crate::CellType;
 use macroquad::prelude::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, strum::Display)]
-pub enum Cell {
-    Empty,
-    Wall,
-    Sand,
-    Water,
-    Gas,
-    Seed,
-    PlantHead,
-    PlantStem,
-    LeafBody,
-    LeafSide,
+#[derive(Default, Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub struct CellState {
+    pub ty: CellType,
+    pub last_update: u64,
 }
 
-impl Default for Cell {
-    fn default() -> Self {
-        Self::Empty
+impl From<CellType> for CellState {
+    fn from(ty: CellType) -> Self {
+        Self { ty, last_update: 0 }
     }
 }
 
-impl Cell {
-    pub fn from_prev_state(self, data: &Sandbox, x: u16, y: u16) -> Action {
-        let neighbors = data.get_neighbors(x, y);
-        let swap_seed = ::rand::random::<u16>();
+impl CellState {
+    pub fn draw_to_image(&self, image: &mut Image, x: u16, y: u16) {
+        let x = x as u32;
+        let y = y as u32;
 
-        let ctx = RuleContext {
-            current_cell_x: x,
-            current_cell_y: y,
-            current_cell: self,
-            data,
-            neighbors: &neighbors,
-            swap_seed,
+        let color = match self.ty {
+            CellType::Empty => BLACK,
+            CellType::Wall => DARKGRAY,
+            CellType::Sand => GOLD,
+            CellType::Water => BLUE,
+            CellType::Gas => LIGHTGRAY,
         };
 
-        ctx.into_action()
+        image.set_pixel(x, image.height as u32 - y - 1, color);
     }
 }

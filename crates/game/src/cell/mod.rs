@@ -1,6 +1,5 @@
 mod cell_state;
-mod draw_cell;
-mod rules;
+mod cell_type;
 
 pub use cell_state::*;
-pub use rules::*;
+pub use cell_type::*;

@@ -13,7 +13,7 @@ pub enum Direction {
 
 impl Direction {
     #[inline(always)]
-    pub fn opposite(self) -> Self {
+    pub const fn opposite(self) -> Self {
         match self {
             Self::Up => Self::Down,
             Self::Down => Self::Up,
@@ -27,7 +27,7 @@ impl Direction {
     }
 
     #[inline(always)]
-    pub fn to_offset(self) -> (i16, i16) {
+    pub const fn to_offset(self) -> (i32, i32) {
         match self {
             Self::Up => (0, 1),
             Self::Down => (0, -1),

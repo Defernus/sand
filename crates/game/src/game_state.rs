@@ -2,8 +2,8 @@ use crate::*;
 use macroquad::prelude::*;
 
 pub struct GameState {
-    pub sandbox: Sandbox,
-    pub cell_variants: Vec<Cell>,
+    pub world: World,
+    pub cell_variants: Vec<CellType>,
     pub selected_cell: usize,
     pub ticks_per_frame: u16,
     pub spawn_mode: SpawnMode,
@@ -22,17 +22,16 @@ macro_rules! is_pressed {
 }
 
 impl GameState {
-    pub fn new(width: u16, height: u16) -> Self {
+    pub fn new() -> Self {
         Self {
-            sandbox: Sandbox::new(width, height).with_bottom_wall(),
+            world: World::default(),
 
             cell_variants: vec![
-                Cell::Empty,
-                Cell::Wall,
-                Cell::Sand,
-                Cell::Water,
-                Cell::Gas,
-                Cell::Seed,
+                CellType::Empty,
+                CellType::Wall,
+                CellType::Sand,
+                CellType::Water,
+                CellType::Gas,
             ],
 
             spawn_mode: SpawnMode::Circle,
@@ -42,9 +41,13 @@ impl GameState {
         }
     }
 
+    pub fn draw_to_image(&self, image: &mut Image) {
+        self.world.draw_to_image(image, CellPosition::default());
+    }
+
     pub fn on_frame(&mut self) {
         for _ in 0..self.ticks_per_frame {
-            self.sandbox.tick();
+            self.world.update_state();
         }
 
         self.handle_tick_speed_selection();
@@ -88,29 +91,41 @@ impl GameState {
         }
     }
 
+    /// Returns cell position at the screen coordinates
+    fn screen_cord_to_position(&self, x: f32, y: f32) -> CellPosition {
+        let dpi_scale = screen_dpi_scale();
+
+        let x = x * dpi_scale;
+        let y = (screen_height() - y) * dpi_scale;
+
+        Position {
+            x: x as i32,
+            y: y as i32,
+        }
+        .into()
+    }
+
     pub fn handle_spawn_cells(&mut self) {
         let condition = match self.spawn_mode {
             SpawnMode::Single => is_mouse_button_pressed(MouseButton::Left),
             SpawnMode::Circle => is_mouse_button_down(MouseButton::Left),
         };
-        if condition {
-            let (x, y) = mouse_position();
+        if !condition {
+            return;
+        }
 
-            let x = x / screen_width();
-            let y = 1.0 - (y / screen_height());
+        let (x, y) = mouse_position();
 
-            let x = (x * self.sandbox.size.width as f32) as i16;
-            let y = (y * self.sandbox.size.height as f32) as i16;
+        let position = self.screen_cord_to_position(x, y);
 
-            let cell = self.cell_variants[self.selected_cell];
+        let cell = self.cell_variants[self.selected_cell];
 
-            match self.spawn_mode {
-                SpawnMode::Single => {
-                    self.sandbox.set_wrapper(x, y, cell);
-                }
-                SpawnMode::Circle => {
-                    self.sandbox.spawn_cells(cell, x, y, 4, 1.5);
-                }
+        match self.spawn_mode {
+            SpawnMode::Single => {
+                self.world.set(position, cell);
+            }
+            SpawnMode::Circle => {
+                self.world.spawn_cells(cell, position, 32, 0.5);
             }
         }
     }

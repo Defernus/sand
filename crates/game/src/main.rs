@@ -18,10 +18,16 @@ async fn main() {
 
     println!("Screen size: {}x{}", width, height);
 
-    let mut state = GameState::new(width, height);
-    let sandbox_size = state.sandbox.size();
+    let mut state = GameState::new();
 
-    let mut image = Image::gen_image_color(sandbox_size.width, sandbox_size.height, BLACK);
+    let max_chunk = CellPosition::new(width as i32 - 1, height as i32 - 1).get_chunk_position();
+    for x in 0..=max_chunk.x {
+        for y in 0..=max_chunk.y {
+            state.world.ensure_chunk(ChunkPosition::new(x, y));
+        }
+    }
+
+    let mut image = Image::gen_image_color(width, height, BLACK);
     let texture = Texture2D::from_image(&image);
 
     loop {
@@ -31,7 +37,7 @@ async fn main() {
 
         state.on_frame();
 
-        state.sandbox.draw_to_image(&mut image);
+        state.draw_to_image(&mut image);
 
         clear_background(WHITE);
 
