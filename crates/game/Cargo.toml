@@ -12,5 +12,5 @@ keywords = { workspace = true }
 macroquad.workspace = true
 rayon.workspace = true
 rand.workspace = true
-strum.workspace = true
 nohash-hasher.workspace = true
+strum.workspace = true
