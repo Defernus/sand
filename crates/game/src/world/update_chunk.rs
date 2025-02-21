@@ -1,7 +1,7 @@
 use crate::*;
 
 pub struct ChunkUpdateContext {
-    pub current_update_switch: bool,
+    pub current_tick: u32,
     pub center: Chunk,
     pub left: Chunk,
     pub right: Chunk,
@@ -14,73 +14,265 @@ pub struct ChunkUpdateContext {
 }
 
 /// Cell relative position
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RelativePos {
-    x: i8,
-    y: i8,
+    pub x: i8,
+    pub y: i8,
+}
+
+impl RelativePos {
+    pub const fn self_pos() -> Self {
+        Self { x: 0, y: 0 }
+    }
+
+    pub const fn new(x: i8, y: i8) -> Self {
+        Self { x, y }
+    }
 }
 
 impl ChunkUpdateContext {
-    /// This function will process only central chunk, but it will also access the surrounding chunks and in some cases modify them (e.g. sand falling)
+    /// This function will process only central chunk, but it will also access the surrounding
+    /// chunks and in some cases modify them (e.g. sand falling)
     pub fn process(&mut self) {
         self.center.should_update = false;
 
-        for index in 0..CHUNK_AREA {
-            // TODO update swapped cell also
+        let rev_row = ::rand::random::<bool>();
+        let rev_col = ::rand::random::<bool>();
 
-            self.update_cell(index);
+        for x in 0..CHUNK_SIZE {
+            for y in 0..CHUNK_SIZE {
+                let index = CellPos {
+                    y: if rev_col { CHUNK_SIZE - 1 - x } else { x } as u16,
+                    x: if rev_row { CHUNK_SIZE - 1 - y } else { y } as u16,
+                }
+                .to_index();
+                self.update_cell(index);
+            }
+        }
+
+        // If chunk updated next frame we need to update surrounding chunks
+        if self.center.should_update {
+            self.bottom.should_update = true;
+            self.top.should_update = true;
+            self.left.should_update = true;
+            self.right.should_update = true;
+            self.left_top.should_update = true;
+            self.right_top.should_update = true;
+            self.left_bottom.should_update = true;
+            self.right_bottom.should_update = true;
         }
     }
 
     #[inline(always)]
-    fn update_cell(&mut self, index: usize) -> bool {
-        let cell_pos = AbsoluteCellPos {
-            index,
-            side: Side {
-                horizontal: HorizontalSide::Center,
-                vertical: VerticalSide::Center,
-            },
-        };
+    fn update_cell(&mut self, cell_index: usize) {
+        let cell = self.center.get_by_index(cell_index);
+        if cell.last_update == self.current_tick {
+            return;
+        }
+        let cell_config = cell.config();
 
-        let cell = self.center.get_by_index(index);
+        self.try_apply_rule(&cell_config.rule, cell_index, cell);
+    }
 
-        match cell.id {
-            CELL_VACUUM => {
-                // Do nothing
+    fn try_apply_rule(&mut self, rule: &CellRule, cell_index: usize, cell: Cell) -> bool {
+        match rule {
+            CellRule::FirstSuccess(list) => {
+                for rule in *list {
+                    if self.try_apply_rule(rule, cell_index, cell) {
+                        return true;
+                    }
+                }
+
+                false
             }
-            CELL_SAND => {
-                let down_pos = get_absolute_cell_pos(index, RelativePos { x: 0, y: -1 });
-                let down_cell = self.get_cell(down_pos);
-                if down_cell.id == CELL_VACUUM || down_cell.id == CELL_WATER {
-                    self.swap_cells(cell_pos, down_pos);
+            CellRule::Conditioned { condition, action } => {
+                if self.check_condition(condition, cell_index) {
+                    self.apply_action(action, cell_index);
                     return true;
                 }
 
-                let down_left_pos = get_absolute_cell_pos(index, RelativePos { x: -1, y: -1 });
-                let down_left_cell = self.get_cell(down_left_pos);
-                if down_left_cell.id == CELL_VACUUM || down_left_cell.id == CELL_WATER {
-                    self.swap_cells(cell_pos, down_left_pos);
-                    return true;
-                }
+                false
+            }
+            CellRule::RandomPair(rule_a, rule_b) => {
+                let random_value = self.center.get_random_value(cell_index);
 
-                let down_right_pos = get_absolute_cell_pos(index, RelativePos { x: 1, y: -1 });
-                let down_right_cell = self.get_cell(down_right_pos);
-                if down_right_cell.id == CELL_VACUUM || down_right_cell.id == CELL_WATER {
-                    self.swap_cells(cell_pos, down_right_pos);
-                    return true;
+                if random_value & 1 == 0 {
+                    self.apply_rule_pair(cell_index, cell, rule_a, rule_b)
+                } else {
+                    self.apply_rule_pair(cell_index, cell, rule_b, rule_a)
                 }
             }
-            CELL_WATER => {
-                // TODO
+            CellRule::ApplyAndContinue(rule) => {
+                self.try_apply_rule(rule, cell_index, cell);
+                false
             }
-            CELL_STONE => {
-                // TODO
-            }
-            _ => {
-                // unknown cell, also do nothing
-            }
+            CellRule::Idle => true,
+        }
+    }
+
+    fn apply_rule_pair(
+        &mut self,
+        cell_index: usize,
+        cell: Cell,
+        a: &CellRule,
+        b: &CellRule,
+    ) -> bool {
+        if self.try_apply_rule(a, cell_index, cell) {
+            return true;
         }
 
-        false
+        self.try_apply_rule(b, cell_index, cell)
+    }
+
+    fn check_condition(&self, condition: &RuleCondition, cell_index: usize) -> bool {
+        match condition {
+            RuleCondition::RelativeCell { pos, cell_id } => {
+                let pos = get_absolute_cell_pos(cell_index, *pos);
+                let cell = self.get_cell(pos);
+                cell.id == *cell_id
+            }
+            RuleCondition::RelativeCellNot { pos, cell_id } => {
+                let pos = get_absolute_cell_pos(cell_index, *pos);
+                let cell = self.get_cell(pos);
+                cell.id != *cell_id
+            }
+            RuleCondition::RelativeCellIn { pos, cell_id_list } => {
+                let pos = get_absolute_cell_pos(cell_index, *pos);
+                let cell = self.get_cell(pos);
+                cell_id_list.contains(&cell.id)
+            }
+            RuleCondition::RelativeCellNotIn { pos, cell_id_list } => {
+                let pos = get_absolute_cell_pos(cell_index, *pos);
+                let cell = self.get_cell(pos);
+                !cell_id_list.contains(&cell.id)
+            }
+            RuleCondition::And(conditions) => conditions
+                .iter()
+                .all(|c| self.check_condition(c, cell_index)),
+            RuleCondition::Or(conditions) => conditions
+                .iter()
+                .any(|c| self.check_condition(c, cell_index)),
+            RuleCondition::Not(condition) => !self.check_condition(condition, cell_index),
+            RuleCondition::RegisterEq {
+                pos,
+                register,
+                value,
+            } => {
+                let pos = get_absolute_cell_pos(cell_index, *pos);
+                let cell = self.get_cell(pos);
+                cell.registers[*register as usize] == *value
+            }
+            RuleCondition::RegisterNotEq {
+                pos,
+                register,
+                value,
+            } => {
+                let pos = get_absolute_cell_pos(cell_index, *pos);
+                let cell = self.get_cell(pos);
+                cell.registers[*register as usize] != *value
+            }
+            RuleCondition::Always => true,
+        }
+    }
+
+    fn apply_action(&mut self, action: &RuleAction, cell_index: usize) {
+        match action {
+            RuleAction::OrderedActions(list) => {
+                for action in *list {
+                    self.apply_action(action, cell_index);
+                }
+            }
+            RuleAction::InitCell { pos, cell_id } => {
+                let pos = get_absolute_cell_pos(cell_index, *pos);
+                self.set_cell(pos, Cell::new(*cell_id));
+            }
+            RuleAction::SwapWith { pos } => {
+                let pos = get_absolute_cell_pos(cell_index, *pos);
+                self.swap_cells(AbsoluteCellPos::central(cell_index), pos);
+            }
+            RuleAction::IncrementRegister { register, pos } => {
+                let register_index = *register as usize;
+                assert!(
+                    register_index < CELL_REGISTERS_COUNT,
+                    "Register out of bounds"
+                );
+                let pos = get_absolute_cell_pos(cell_index, *pos);
+                let mut cell = self.get_cell(pos);
+                cell.registers[register_index] = cell.registers[register_index].wrapping_add(1);
+                self.set_cell(pos, cell);
+            }
+            RuleAction::DecrementRegister { register, pos } => {
+                let register_index = *register as usize;
+                assert!(
+                    register_index < CELL_REGISTERS_COUNT,
+                    "Register out of bounds"
+                );
+                let pos = get_absolute_cell_pos(cell_index, *pos);
+                let mut cell = self.get_cell(pos);
+                cell.registers[register_index] = cell.registers[register_index].wrapping_sub(1);
+                self.set_cell(pos, cell);
+            }
+            RuleAction::SetRegister {
+                register,
+                value,
+                pos,
+            } => {
+                let register_index = *register as usize;
+                assert!(
+                    register_index < CELL_REGISTERS_COUNT,
+                    "Register out of bounds"
+                );
+                let pos = get_absolute_cell_pos(cell_index, *pos);
+                let mut cell = self.get_cell(pos);
+                cell.registers[register_index] = *value;
+                self.set_cell(pos, cell);
+            }
+            RuleAction::MoveRegister {
+                source_register,
+                source_cell,
+                target_register,
+                target_cell,
+            } => {
+                let source_register_index = *source_register as usize;
+                let target_register_index = *target_register as usize;
+                assert!(
+                    source_register_index < CELL_REGISTERS_COUNT,
+                    "Register out of bounds"
+                );
+                assert!(
+                    target_register_index < CELL_REGISTERS_COUNT,
+                    "Register out of bounds"
+                );
+
+                let source_pos = get_absolute_cell_pos(cell_index, *source_cell);
+                let target_pos = get_absolute_cell_pos(cell_index, *target_cell);
+
+                let source_cell = self.get_cell(source_pos);
+                let mut target_cell = self.get_cell(target_pos);
+
+                target_cell.registers[target_register_index] =
+                    source_cell.registers[source_register_index];
+
+                self.set_cell(target_pos, target_cell);
+            }
+            RuleAction::SerRegisterRandomMasked {
+                register,
+                mask,
+                pos,
+            } => {
+                let register_index = *register as usize;
+                assert!(
+                    register_index < CELL_REGISTERS_COUNT,
+                    "Register out of bounds"
+                );
+
+                let pos = get_absolute_cell_pos(cell_index, *pos);
+                let mut cell = self.get_cell(pos);
+                cell.registers[register_index] =
+                    self.center.get_random_value(cell_index) as u32 & *mask;
+                self.set_cell(pos, cell);
+            }
+        }
     }
 
     #[inline(always)]
@@ -119,17 +311,16 @@ impl ChunkUpdateContext {
     }
 
     #[inline(always)]
-    fn set_cell(&mut self, pos: AbsoluteCellPos, cell: Cell) {
+    fn set_cell(&mut self, pos: AbsoluteCellPos, mut cell: Cell) {
+        // mark cells as updated
+        cell.last_update = self.current_tick;
         self.get_chunk_mut(pos.side).set_by_index(pos.index, cell);
     }
 
+    #[inline(always)]
     fn swap_cells(&mut self, a: AbsoluteCellPos, b: AbsoluteCellPos) {
-        let mut cell_a = self.get_cell(a);
-        let mut cell_b = self.get_cell(b);
-
-        // mark cells as updated
-        cell_a.updated_switch = self.current_update_switch;
-        cell_b.updated_switch = self.current_update_switch;
+        let cell_a = self.get_cell(a);
+        let cell_b = self.get_cell(b);
 
         self.set_cell(a, cell_b);
         self.set_cell(b, cell_a);
@@ -160,6 +351,18 @@ struct Side {
 struct AbsoluteCellPos {
     index: usize,
     side: Side,
+}
+
+impl AbsoluteCellPos {
+    fn central(index: usize) -> Self {
+        Self {
+            index,
+            side: Side {
+                horizontal: HorizontalSide::Center,
+                vertical: VerticalSide::Center,
+            },
+        }
+    }
 }
 
 fn get_absolute_cell_pos(cell_index: usize, dst_relative_pos: RelativePos) -> AbsoluteCellPos {

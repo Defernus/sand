@@ -63,6 +63,7 @@ impl ChunkPos {
 #[derive(Debug)]
 pub struct Chunk {
     data: Box<[Cell; CHUNK_AREA]>,
+    next_random: Box<[u64; CHUNK_AREA]>,
     texture: Option<Texture2D>,
     image: Option<Image>,
     pub should_update: bool,
@@ -77,19 +78,33 @@ impl Default for Chunk {
 
 impl Chunk {
     pub fn new() -> Self {
+        let mut next_random = Box::new([0; CHUNK_AREA]);
+        for i in 0..CHUNK_AREA {
+            next_random[i] = ::rand::random();
+        }
+
         Self {
             texture: None,
             image: None,
-            data: Box::new(
-                [Cell {
-                    data: 0,
-                    id: CELL_VACUUM,
-                    updated_switch: false,
-                }; CHUNK_AREA],
-            ),
+            data: Box::new([CELL_VACUUM.init(); CHUNK_AREA]),
+            next_random,
             should_update: false,
             should_redraw: false,
         }
+    }
+
+    /// Get next random value for specific cell
+    ///
+    /// See [Xorshift](https://en.wikipedia.org/wiki/Xorshift) for more information
+    pub fn get_random_value(&mut self, index: usize) -> u64 {
+        let mut x = self.next_random[index];
+
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+
+        self.next_random[index] = x;
+        x
     }
 
     #[inline(always)]
@@ -123,6 +138,11 @@ impl Chunk {
         self.data[index]
     }
 
+    #[inline(always)]
+    pub fn get_mut_by_index(&mut self, index: usize) -> &mut Cell {
+        &mut self.data[index]
+    }
+
     pub fn get_texture(&mut self) -> &Texture2D {
         if self.texture.is_none() || self.should_redraw {
             self.should_redraw = false;
@@ -132,16 +152,21 @@ impl Chunk {
                 Color::from_rgba(0, 0, 0, 0),
             );
 
-            for chunk_index in 0..CHUNK_AREA {
-                let cell = self.get_by_index(chunk_index);
-                let cell_pos = CellPos::from_index(chunk_index);
+            for cell_index in 0..CHUNK_AREA {
+                let cell = self.get_by_index(cell_index);
+                let cell_pos = CellPos::from_index(cell_index);
 
-                let color = cell.get_color();
-                image.set_pixel(
-                    cell_pos.x as u32,
-                    (image.height - 1 - cell_pos.y) as u32,
-                    color,
-                );
+                // let color = cell.color.;
+                // image.set_pixel(
+                //     cell_pos.x as u32,
+                //     (image.height - 1 - cell_pos.y) as u32,
+                //     color,
+                // );
+                let pixel_x = cell_pos.x as usize;
+                let pixel_y = CHUNK_SIZE - 1 - cell_pos.y as usize;
+
+                let color = cell.color().calculate(self, cell_index);
+                image.get_image_data_mut()[pixel_y * CHUNK_SIZE + pixel_x] = color;
             }
 
             self.image = Some(image);

@@ -11,17 +11,12 @@ fn window_conf() -> Conf {
 
 fn gen_world(world: &mut WorldState) {
     let floor_height = 3;
-    for x in -100..100 as i32 {
+    let floor_width: i32 = 200;
+    for x in -(floor_width / 2)..(floor_width / 2) {
         for y in 0..floor_height {
             let pos = GlobalCellPos::new(x, y);
-            world.set_cell(pos, Cell::new(CELL_STONE));
+            world.set_cell(pos, CELL_STONE.init());
         }
-    }
-
-    for y in (floor_height + 1)..100 {
-        let pos = GlobalCellPos::new(0, y);
-
-        world.set_cell(pos, Cell::new(CELL_SAND));
     }
 }
 

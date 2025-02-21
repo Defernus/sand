@@ -85,6 +85,14 @@ impl GlobalCellPos {
     }
 }
 
+impl std::ops::Add<RelativePos> for GlobalCellPos {
+    type Output = Self;
+
+    fn add(self, rhs: RelativePos) -> Self::Output {
+        GlobalCellPos::new(self.x() + rhs.x as i32, self.y() + rhs.y as i32)
+    }
+}
+
 #[test]
 fn test_chunk_pos_to_index() {
     let pos = CellPos::new(5, 13);

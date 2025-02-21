@@ -6,7 +6,7 @@ use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 #[derive(Default)]
 pub struct WorldState {
     chunks: IntMap<ChunkPos, Chunk>,
-    current_update_switch: bool,
+    current_tick: u32,
 }
 
 impl WorldState {
@@ -69,7 +69,7 @@ impl WorldState {
             for chunk_pos in group {
                 update_contexts.push((
                     ChunkUpdateContext {
-                        current_update_switch: self.current_update_switch,
+                        current_tick: self.current_tick,
                         center: self.take_chunk(chunk_pos),
                         left: self.take_chunk(chunk_pos.left()),
                         right: self.take_chunk(chunk_pos.right()),
@@ -103,7 +103,7 @@ impl WorldState {
             }
         }
 
-        self.current_update_switch = !self.current_update_switch;
+        self.current_tick += 1;
 
         updates_count
     }

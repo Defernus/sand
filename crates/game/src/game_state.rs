@@ -6,7 +6,7 @@ pub struct GameState {
     pub selected_cell: usize,
     pub ticks_per_frame: u16,
     pub spawn_mode: SpawnMode,
-    pub cell_variants: Vec<CellId>,
+    pub cell_variants: Vec<&'static str>,
     pub camera: WorldCamera,
     pub camera_speed: f32,
     pub camera_fast_speed: f32,
@@ -32,13 +32,13 @@ impl GameState {
         Self {
             world: WorldState::default(),
 
-            cell_variants: vec![CELL_VACUUM, CELL_SAND, CELL_WATER, CELL_STONE],
+            cell_variants: CELLS.iter().map(|cell| cell.name).collect(),
 
             spawn_mode: SpawnMode::Circle,
 
             camera: WorldCamera::new(Vec2::ZERO, 2.0),
 
-            selected_cell: 2,
+            selected_cell: 1,
             ticks_per_frame: 1,
 
             camera_speed: 100.0,
@@ -72,6 +72,37 @@ impl GameState {
 
         let texture = chunk.get_texture();
 
+        const BG_COLOR_1: Color = Color::new(0.4, 0.4, 0.4, 1.0);
+        const BG_COLOR_2: Color = Color::new(0.7, 0.7, 0.7, 1.0);
+        draw_rectangle(
+            offset.x,
+            offset.y,
+            chunk_size.x * 0.5,
+            chunk_size.y * 0.5,
+            BG_COLOR_1,
+        );
+        draw_rectangle(
+            offset.x,
+            offset.y + chunk_size.y * 0.5,
+            chunk_size.x * 0.5,
+            chunk_size.y * 0.5,
+            BG_COLOR_2,
+        );
+        draw_rectangle(
+            offset.x + chunk_size.x * 0.5,
+            offset.y,
+            chunk_size.x * 0.5,
+            chunk_size.y * 0.5,
+            BG_COLOR_2,
+        );
+        draw_rectangle(
+            offset.x + chunk_size.x * 0.5,
+            offset.y + chunk_size.x * 0.5,
+            chunk_size.x * 0.5,
+            chunk_size.y * 0.5,
+            BG_COLOR_1,
+        );
+
         draw_texture_ex(
             texture,
             offset.x,
@@ -84,21 +115,13 @@ impl GameState {
             },
         );
 
+        let text_color = if chunk.should_update { RED } else { WHITE };
         draw_text(
             &format!("{} {}", chunk_pos.x, chunk_pos.y),
             offset.x + chunk_size.x / 2.0,
             offset.y + chunk_size.x / 2.0,
             10.0,
-            WHITE,
-        );
-
-        draw_rectangle_lines(
-            offset.x,
-            offset.y,
-            chunk_size.x,
-            chunk_size.y,
-            1.0,
-            Color::new(1.0, 0.0, 0.0, 1.0),
+            text_color,
         );
     }
 
@@ -194,15 +217,24 @@ impl GameState {
 
         let position = self.camera.screen_cord_to_global_pos(vec2(x, y));
 
-        let cell = Cell::new(self.cell_variants[self.selected_cell]);
+        let selected_cell_name = self.cell_variants[self.selected_cell];
+        let cell = CELLS
+            .iter()
+            .find(|cell| cell.name == selected_cell_name)
+            .expect("Cell not found");
 
         match self.spawn_mode {
             SpawnMode::Single => {
-                self.world.set_cell(position, cell);
+                self.world.set_cell(position, cell.init());
             }
             SpawnMode::Circle => {
-                // self.world.spawn_cells(cell, position, 32, 0.5);
-                self.world.set_cell(position, cell);
+                let radius = 5;
+                for x in -radius..=radius {
+                    for y in -radius..=radius {
+                        let position = position + RelativePos::new(x, y);
+                        self.world.set_cell(position, cell.init());
+                    }
+                }
             }
         }
     }
