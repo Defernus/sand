@@ -231,7 +231,7 @@ impl GameState {
                 let radius = 5;
                 for x in -radius..=radius {
                     for y in -radius..=radius {
-                        let position = position + RelativePos::new(x, y);
+                        let position = position.add(x, y);
                         self.world.set_cell(position, cell.init());
                     }
                 }

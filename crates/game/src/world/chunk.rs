@@ -94,17 +94,19 @@ impl Chunk {
     }
 
     /// Get next random value for specific cell
-    ///
-    /// See [Xorshift](https://en.wikipedia.org/wiki/Xorshift) for more information
+    #[inline(always)]
     pub fn get_random_value(&mut self, index: usize) -> u64 {
-        let mut x = self.next_random[index];
+        next_random(&mut self.next_random[index])
+    }
 
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
+    #[inline(always)]
+    pub fn get_random_seed(&self, index: usize) -> u64 {
+        self.next_random[index]
+    }
 
-        self.next_random[index] = x;
-        x
+    #[inline(always)]
+    pub fn set_random_seed(&mut self, index: usize, seed: u64) {
+        self.next_random[index] = seed;
     }
 
     #[inline(always)]

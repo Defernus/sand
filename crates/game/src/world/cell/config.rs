@@ -1,14 +1,15 @@
 use crate::*;
 
+pub type CellRegister = u32;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CellConfig {
     pub id: CellId,
     pub color: CellColor,
     pub name: &'static str,
-    pub rule: CellRule,
     /// If true, AGE register will be incremented on each tick.
     pub count_age: bool,
-    pub initial_register_values: [u32; CELL_REGISTERS_COUNT],
+    pub initial_register_values: [CellRegister; CELL_REGISTERS_COUNT],
 }
 
 impl CellConfig {
@@ -64,99 +65,4 @@ impl CellColor {
             }
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum CellRule {
-    /// Do nothing, always succeed.
-    ///
-    /// NOTE: can be used to randomly stop processing if used in [`CellRule::FirstSuccess`]
-    Idle,
-    /// If this `condition` is met, `action` will be executed
-    Conditioned {
-        condition: RuleCondition,
-        action: RuleAction,
-    },
-    /// Even if rule applied, continue processing other rules.
-    ApplyAndContinue(&'static CellRule),
-    /// Rules will be checked in order they are provided and first matching rule will be executed.
-    FirstSuccess(&'static [CellRule]),
-    /// Pair of rules will be checked in random order and first matching rule will be executed.
-    RandomPair(&'static CellRule, &'static CellRule),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum RuleCondition {
-    And(&'static [RuleCondition]),
-    Or(&'static [RuleCondition]),
-    Not(&'static RuleCondition),
-    /// Check if cell at position has specific id
-    RelativeCell {
-        pos: RelativePos,
-        cell_id: CellId,
-    },
-    /// Check if cell at position does not have specific id
-    RelativeCellNot {
-        pos: RelativePos,
-        cell_id: CellId,
-    },
-    /// Check if cell at position has id from list
-    RelativeCellIn {
-        pos: RelativePos,
-        cell_id_list: &'static [CellId],
-    },
-    /// Check if cell at position does not have id from list
-    RelativeCellNotIn {
-        pos: RelativePos,
-        cell_id_list: &'static [CellId],
-    },
-    RegisterEq {
-        pos: RelativePos,
-        register: u8,
-        value: u32,
-    },
-    RegisterNotEq {
-        pos: RelativePos,
-        register: u8,
-        value: u32,
-    },
-    Always,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum RuleAction {
-    /// Execute all actions from the list one by one in order they are provided
-    OrderedActions(&'static [RuleAction]),
-    /// Set cell to specific id and initialize it.
-    InitCell {
-        pos: RelativePos,
-        cell_id: CellId,
-    },
-    SwapWith {
-        pos: RelativePos,
-    },
-    IncrementRegister {
-        register: u8,
-        pos: RelativePos,
-    },
-    DecrementRegister {
-        register: u8,
-        pos: RelativePos,
-    },
-    SetRegister {
-        register: u8,
-        value: u32,
-        pos: RelativePos,
-    },
-    SerRegisterRandomMasked {
-        register: u8,
-        mask: u32,
-        pos: RelativePos,
-    },
-    MoveRegister {
-        source_register: u8,
-        source_cell: RelativePos,
-        target_register: u8,
-        target_cell: RelativePos,
-    },
 }

@@ -62,44 +62,57 @@ impl WorldState {
             updates_count += chunk_group.len();
         }
 
-        for group in update_groups {
-            let mut update_contexts =
-                Vec::<(ChunkUpdateContext, ChunkPos)>::with_capacity(group.len());
+        for update_variant in [
+            UpdateVariant::A,
+            UpdateVariant::B,
+            UpdateVariant::C,
+            UpdateVariant::D,
+        ] {
+            for group in &mut update_groups {
+                let mut update_contexts =
+                    Vec::<(ChunkUpdateContext, ChunkPos)>::with_capacity(group.len());
 
-            for chunk_pos in group {
-                update_contexts.push((
-                    ChunkUpdateContext {
-                        current_tick: self.current_tick,
-                        center: self.take_chunk(chunk_pos),
-                        left: self.take_chunk(chunk_pos.left()),
-                        right: self.take_chunk(chunk_pos.right()),
-                        top: self.take_chunk(chunk_pos.top()),
-                        bottom: self.take_chunk(chunk_pos.bottom()),
-                        left_top: self.take_chunk(chunk_pos.left_top()),
-                        right_top: self.take_chunk(chunk_pos.right_top()),
-                        left_bottom: self.take_chunk(chunk_pos.left_bottom()),
-                        right_bottom: self.take_chunk(chunk_pos.right_bottom()),
-                    },
-                    chunk_pos,
-                ));
-            }
+                for chunk_pos in group {
+                    let chunk_pos = *chunk_pos;
 
-            update_contexts
-                .par_iter_mut()
-                .for_each(|(context, _chunk_pos)| {
-                    context.process();
-                });
+                    update_contexts.push((
+                        ChunkUpdateContext {
+                            current_tick: self.current_tick,
+                            update_variant,
+                            center: self.take_chunk(chunk_pos),
+                            left: self.take_chunk(chunk_pos.left()),
+                            right: self.take_chunk(chunk_pos.right()),
+                            top: self.take_chunk(chunk_pos.top()),
+                            bottom: self.take_chunk(chunk_pos.bottom()),
+                            left_top: self.take_chunk(chunk_pos.left_top()),
+                            right_top: self.take_chunk(chunk_pos.right_top()),
+                            left_bottom: self.take_chunk(chunk_pos.left_bottom()),
+                            right_bottom: self.take_chunk(chunk_pos.right_bottom()),
+                        },
+                        chunk_pos,
+                    ));
+                }
 
-            for (context, chunk_pos) in update_contexts {
-                self.set_chunk(chunk_pos, context.center);
-                self.set_chunk(chunk_pos.left(), context.left);
-                self.set_chunk(chunk_pos.right(), context.right);
-                self.set_chunk(chunk_pos.top(), context.top);
-                self.set_chunk(chunk_pos.bottom(), context.bottom);
-                self.set_chunk(chunk_pos.left_top(), context.left_top);
-                self.set_chunk(chunk_pos.right_top(), context.right_top);
-                self.set_chunk(chunk_pos.left_bottom(), context.left_bottom);
-                self.set_chunk(chunk_pos.right_bottom(), context.right_bottom);
+                update_contexts
+                    .par_iter_mut()
+                    .for_each(|(context, _chunk_pos)| {
+                        let prev_should_update =
+                            update_variant != UpdateVariant::A && context.center.should_update;
+                        context.process();
+                        context.center.should_update |= prev_should_update;
+                    });
+
+                for (context, chunk_pos) in update_contexts {
+                    self.set_chunk(chunk_pos, context.center);
+                    self.set_chunk(chunk_pos.left(), context.left);
+                    self.set_chunk(chunk_pos.right(), context.right);
+                    self.set_chunk(chunk_pos.top(), context.top);
+                    self.set_chunk(chunk_pos.bottom(), context.bottom);
+                    self.set_chunk(chunk_pos.left_top(), context.left_top);
+                    self.set_chunk(chunk_pos.right_top(), context.right_top);
+                    self.set_chunk(chunk_pos.left_bottom(), context.left_bottom);
+                    self.set_chunk(chunk_pos.right_bottom(), context.right_bottom);
+                }
             }
         }
 

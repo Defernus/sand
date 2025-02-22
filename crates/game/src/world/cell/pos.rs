@@ -83,13 +83,9 @@ impl GlobalCellPos {
     pub fn y(&self) -> i32 {
         self.chunk.y * CHUNK_SIZE as i32 + self.cell.y as i32
     }
-}
 
-impl std::ops::Add<RelativePos> for GlobalCellPos {
-    type Output = Self;
-
-    fn add(self, rhs: RelativePos) -> Self::Output {
-        GlobalCellPos::new(self.x() + rhs.x as i32, self.y() + rhs.y as i32)
+    pub fn add(&self, x: i32, y: i32) -> Self {
+        Self::new(self.x() + x, self.y() + y)
     }
 }
 
