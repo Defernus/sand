@@ -20,7 +20,7 @@ pub const CELL_VACUUM: CellConfig = CellConfig {
 
 pub const CELL_SAND: CellConfig = CellConfig {
     id: 2,
-    color: CellColor::RandomizeBrightness([220, 220, 0, 255], 32),
+    color: CellColor::RandomizeBrightness([190, 174, 110, 255], 16),
     count_age: true,
     initial_register_values: [0; CELL_REGISTERS_COUNT],
     name: "Sand",
