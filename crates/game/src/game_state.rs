@@ -18,7 +18,7 @@ pub struct GameState {
 #[derive(Debug, Clone, Copy, Eq, PartialEq, strum::Display)]
 pub enum SpawnMode {
     Single,
-    Circle,
+    Brush,
 }
 
 macro_rules! is_pressed {
@@ -34,11 +34,11 @@ impl GameState {
 
             cell_variants: CELLS.iter().map(|cell| cell.name).collect(),
 
-            spawn_mode: SpawnMode::Circle,
+            spawn_mode: SpawnMode::Brush,
 
             camera: WorldCamera::new(Vec2::ZERO, 2.0),
 
-            selected_cell: 1,
+            selected_cell: 2,
             ticks_per_frame: 1,
 
             camera_speed: 100.0,
@@ -199,8 +199,8 @@ impl GameState {
     pub fn handle_spawn_mode_selection(&mut self) {
         if is_pressed!(Space) {
             self.spawn_mode = match self.spawn_mode {
-                SpawnMode::Single => SpawnMode::Circle,
-                SpawnMode::Circle => SpawnMode::Single,
+                SpawnMode::Single => SpawnMode::Brush,
+                SpawnMode::Brush => SpawnMode::Single,
             };
         }
     }
@@ -214,7 +214,7 @@ impl GameState {
     pub fn handle_spawn_cells(&mut self) {
         let condition = match self.spawn_mode {
             SpawnMode::Single => is_mouse_button_pressed(MouseButton::Left),
-            SpawnMode::Circle => is_mouse_button_down(MouseButton::Left),
+            SpawnMode::Brush => is_mouse_button_down(MouseButton::Left),
         };
         if !condition {
             return;
@@ -232,7 +232,7 @@ impl GameState {
             SpawnMode::Single => {
                 self.world.set_cell(position, cell.init());
             }
-            SpawnMode::Circle => {
+            SpawnMode::Brush => {
                 let radius = 1;
                 for y in -radius..=radius {
                     for x in -radius..=radius {
@@ -275,6 +275,8 @@ impl GameState {
             self.ticks_per_frame
         );
 
+        draw_debug_line!("Spawn mode (Space to change): {:?}", self.spawn_mode);
+
         draw_debug_line!("Chunks drawn: {}", self.last_chunks_drawn);
 
         draw_debug_line!("Chunks updated: {}", self.last_chunks_updated);
@@ -296,8 +298,6 @@ impl GameState {
         // chunk and cell position
         draw_debug_line!("Chunk pos: ({}, {})", mouse_pos.chunk.x, mouse_pos.chunk.y);
         draw_debug_line!("Cell pos: ({}, {})", mouse_pos.cell.x, mouse_pos.cell.y);
-
-        draw_debug_line!("Spawn mode: {:?}", self.spawn_mode);
     }
 
     pub fn handle_change_scale(&mut self) {
