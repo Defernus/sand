@@ -93,6 +93,9 @@ pub enum CellRule {
     SymmetryX(&'static CellRule),
     /// Same as [`CellRule::SymmetryX`] but mirrored by Y axis.
     SymmetryY(&'static CellRule),
+    /// Same as [`CellRule::SymmetryX`] but instead of mirroring by X axis, swap X and Y
+    /// coordinates.
+    SymmetryDiagonal(&'static CellRule),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
