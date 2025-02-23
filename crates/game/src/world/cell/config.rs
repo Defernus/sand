@@ -1,17 +1,28 @@
 use crate::*;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct CellConfig {
+#[derive(Debug, Clone, PartialEq)]
+pub struct CellsTemplate {
+    pub cells: Vec<CellMeta>,
+}
+
+impl CellsTemplate {
+    pub fn get_cell_meta(&self, id: CellId) -> &CellMeta {
+        &self.cells[id as usize]
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CellMeta {
     pub id: CellId,
     pub color: CellColor,
-    pub name: &'static str,
+    pub label: String,
     pub rule: CellRule,
     /// If true, AGE register will be incremented on each tick.
     pub count_age: bool,
     pub initial_register_values: [u32; CELL_REGISTERS_COUNT],
 }
 
-impl CellConfig {
+impl CellMeta {
     pub fn init(&self) -> Cell {
         Cell {
             id: self.id,
@@ -66,7 +77,7 @@ impl CellColor {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CellRule {
     /// Do nothing, always succeed.
     ///
@@ -80,29 +91,47 @@ pub enum CellRule {
     /// Swap current cell with cell at position if it has specific id
     SwapWithIds {
         pos: RelativePos,
-        match_ids: &'static [CellId],
+        match_ids: Vec<CellId>,
     },
     /// Even if rule applied, continue processing other rules.
-    ApplyAndContinue(&'static CellRule),
+    ApplyAndContinue(Box<CellRule>),
     /// Rules will be checked in order they are provided and first matching rule will be executed.
-    FirstSuccess(&'static [CellRule]),
+    FirstSuccess(Vec<CellRule>),
     /// Pair of rules will be checked in random order and first matching rule will be executed.
-    RandomPair(&'static CellRule, &'static CellRule),
+    RandomPair(Box<(CellRule, CellRule)>),
     /// Try to apply same rule twice: as is and mirrored by X axis. Randomly choose which one to
     /// apply first.
-    SymmetryX(&'static CellRule),
+    SymmetryX(Box<CellRule>),
     /// Same as [`CellRule::SymmetryX`] but mirrored by Y axis.
-    SymmetryY(&'static CellRule),
+    SymmetryY(Box<CellRule>),
     /// Same as [`CellRule::SymmetryX`] but instead of mirroring by X axis, swap X and Y
     /// coordinates.
-    SymmetryDiagonal(&'static CellRule),
+    SymmetryDiagonal(Box<CellRule>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+impl CellRule {
+    pub fn random_pair(first: CellRule, second: CellRule) -> Self {
+        CellRule::RandomPair(Box::new((first, second)))
+    }
+    pub fn apply_and_continue(rule: CellRule) -> Self {
+        CellRule::ApplyAndContinue(Box::new(rule))
+    }
+    pub fn symmetry_x(rule: CellRule) -> Self {
+        CellRule::SymmetryX(Box::new(rule))
+    }
+    pub fn symmetry_y(rule: CellRule) -> Self {
+        CellRule::SymmetryY(Box::new(rule))
+    }
+    pub fn symmetry_diagonal(rule: CellRule) -> Self {
+        CellRule::SymmetryDiagonal(Box::new(rule))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RuleCondition {
-    And(&'static [RuleCondition]),
-    Or(&'static [RuleCondition]),
-    Not(&'static RuleCondition),
+    And(Vec<RuleCondition>),
+    Or(Vec<RuleCondition>),
+    Not(Box<RuleCondition>),
     /// Check if cell at position has specific id
     RelativeCell {
         pos: RelativePos,
@@ -116,12 +145,12 @@ pub enum RuleCondition {
     /// Check if cell at position has id from list
     RelativeCellIn {
         pos: RelativePos,
-        cell_id_list: &'static [CellId],
+        cell_id_list: Vec<CellId>,
     },
     /// Check if cell at position does not have id from list
     RelativeCellNotIn {
         pos: RelativePos,
-        cell_id_list: &'static [CellId],
+        cell_id_list: Vec<CellId>,
     },
     RegisterEq {
         pos: RelativePos,
@@ -136,10 +165,10 @@ pub enum RuleCondition {
     Always,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RuleAction {
     /// Execute all actions from the list one by one in order they are provided
-    OrderedActions(&'static [RuleAction]),
+    OrderedActions(Vec<RuleAction>),
     /// Set cell to specific id and initialize it.
     InitCell {
         pos: RelativePos,

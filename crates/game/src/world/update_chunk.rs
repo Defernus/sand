@@ -1,6 +1,7 @@
 use crate::*;
 
-pub struct ChunkUpdateContext {
+pub struct ChunkUpdateContext<'a> {
+    pub cells_template: &'a CellsTemplate,
     pub current_tick: u32,
     pub center: Chunk,
     pub left: Chunk,
@@ -98,7 +99,7 @@ impl RelativePos {
     }
 }
 
-impl ChunkUpdateContext {
+impl<'a> ChunkUpdateContext<'a> {
     /// This function will process only central chunk, but it will also access the surrounding
     /// chunks and in some cases modify them (e.g. sand falling)
     pub fn process(&mut self) {
@@ -137,7 +138,7 @@ impl ChunkUpdateContext {
         if cell.last_update == self.current_tick {
             return;
         }
-        let cell_config = cell.config();
+        let cell_config = cell.meta(self.cells_template);
 
         self.try_apply_rule(
             &cell_config.rule,
@@ -156,7 +157,7 @@ impl ChunkUpdateContext {
     ) -> bool {
         match rule {
             CellRule::FirstSuccess(list) => {
-                for rule in *list {
+                for rule in list {
                     if self.try_apply_rule(rule, cell_index, cell, transformation) {
                         return true;
                     }
@@ -172,7 +173,8 @@ impl ChunkUpdateContext {
 
                 false
             }
-            CellRule::RandomPair(rule_a, rule_b) => {
+            CellRule::RandomPair(pair) => {
+                let (rule_a, rule_b) = pair.as_ref();
                 let random_value = self.center.get_random_value(cell_index);
 
                 if random_value & 1 == 0 {
@@ -365,13 +367,13 @@ impl ChunkUpdateContext {
     ) {
         match action {
             RuleAction::OrderedActions(list) => {
-                for action in *list {
+                for action in list {
                     self.apply_action(action, cell_index, transformation);
                 }
             }
             RuleAction::InitCell { pos, cell_id } => {
                 let pos = get_absolute_cell_pos(cell_index, pos.transform(transformation));
-                self.set_cell(pos, Cell::new(*cell_id));
+                self.set_cell(pos, Cell::new(&self.cells_template, *cell_id));
             }
             RuleAction::SwapWith { pos } => {
                 let pos = get_absolute_cell_pos(cell_index, pos.transform(transformation));

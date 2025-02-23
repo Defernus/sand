@@ -24,17 +24,18 @@ pub struct Cell {
 }
 
 impl Cell {
-    pub fn new(id: CellId) -> Self {
-        CELLS[id as usize].init()
+    #[inline(always)]
+    pub fn new(cells_template: &CellsTemplate, id: CellId) -> Self {
+        cells_template.get_cell_meta(id).init()
     }
 
     #[inline(always)]
-    pub fn color(&self) -> CellColor {
-        CELLS[self.id as usize].color
+    pub fn color(&self, cells_template: &CellsTemplate) -> CellColor {
+        cells_template.get_cell_meta(self.id).color
     }
 
     #[inline(always)]
-    pub fn config(&self) -> &'static CellConfig {
-        &CELLS[self.id as usize]
+    pub fn meta<'a>(&self, config: &'a CellsTemplate) -> &'a CellMeta {
+        config.get_cell_meta(self.id)
     }
 }

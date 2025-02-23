@@ -70,14 +70,8 @@ pub struct Chunk {
     pub should_redraw: bool,
 }
 
-impl Default for Chunk {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Chunk {
-    pub fn new() -> Self {
+    pub fn new(cells_template: &CellsTemplate) -> Self {
         let mut next_random = Box::new([0; CHUNK_AREA]);
         for i in 0..CHUNK_AREA {
             next_random[i] = ::rand::random();
@@ -86,7 +80,7 @@ impl Chunk {
         Self {
             texture: None,
             image: None,
-            data: Box::new([CELL_VACUUM.init(); CHUNK_AREA]),
+            data: Box::new([cells_template.cells[0].init(); CHUNK_AREA]),
             next_random,
             should_update: false,
             should_redraw: false,
@@ -143,7 +137,7 @@ impl Chunk {
         &mut self.data[index]
     }
 
-    pub fn get_texture(&mut self) -> &Texture2D {
+    pub fn get_texture(&mut self, cells_template: &CellsTemplate) -> &Texture2D {
         if self.texture.is_none() || self.should_redraw {
             self.should_redraw = false;
             let mut image = Image::gen_image_color(
@@ -165,7 +159,7 @@ impl Chunk {
                 let pixel_x = cell_pos.x as usize;
                 let pixel_y = CHUNK_SIZE - 1 - cell_pos.y as usize;
 
-                let color = cell.color().calculate(self, cell_index);
+                let color = cell.color(cells_template).calculate(self, cell_index);
                 image.get_image_data_mut()[pixel_y * CHUNK_SIZE + pixel_x] = color;
             }
 

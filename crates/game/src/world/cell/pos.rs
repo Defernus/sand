@@ -1,6 +1,4 @@
 use crate::*;
-use macroquad::math::vec2;
-use std::ops::Rem;
 
 pub type CellCord = u16;
 
@@ -59,7 +57,7 @@ pub struct GlobalCellPos {
 }
 
 impl GlobalCellPos {
-    pub fn new(mut x: i32, mut y: i32) -> Self {
+    pub fn new(x: i32, y: i32) -> Self {
         let (chunk_x, cell_x) = if x < 0 {
             (
                 (x + 1) / CHUNK_SIZE as i32 - 1,
@@ -86,16 +84,12 @@ impl GlobalCellPos {
 
     #[inline(always)]
     pub fn x(&self) -> i32 {
-        let mut res = self.chunk.x * CHUNK_SIZE as i32 + self.cell.x as i32;
-
-        res
+        self.chunk.x * CHUNK_SIZE as i32 + self.cell.x as i32
     }
 
     #[inline(always)]
     pub fn y(&self) -> i32 {
-        let mut res = self.chunk.y * CHUNK_SIZE as i32 + self.cell.y as i32;
-
-        res
+        self.chunk.y * CHUNK_SIZE as i32 + self.cell.y as i32
     }
 }
 

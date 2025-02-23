@@ -6,7 +6,8 @@ pub struct GameState {
     pub selected_cell: usize,
     pub ticks_per_frame: u16,
     pub spawn_mode: SpawnMode,
-    pub cell_variants: Vec<&'static str>,
+    pub cell_variants: Vec<String>,
+    pub cells_template: CellsTemplate,
     pub camera: WorldCamera,
     pub camera_speed: f32,
     pub camera_fast_speed: f32,
@@ -29,10 +30,18 @@ macro_rules! is_pressed {
 
 impl GameState {
     pub fn new() -> Self {
+        let cells_template = default_cells();
+        let world = WorldState::new();
         Self {
-            world: WorldState::default(),
+            cell_variants: cells_template
+                .cells
+                .iter()
+                .map(|cell| cell.label.clone())
+                .collect(),
 
-            cell_variants: CELLS.iter().map(|cell| cell.name).collect(),
+            world,
+
+            cells_template,
 
             spawn_mode: SpawnMode::Brush,
 
@@ -68,9 +77,9 @@ impl GameState {
         let offset = self.camera.chunk_pos_to_screen_cord(chunk_pos);
         let chunk_size = self.camera.chunk_screen_size();
 
-        let chunk = self.world.ensure_chunk(chunk_pos);
+        let chunk = self.world.ensure_chunk(chunk_pos, &self.cells_template);
 
-        let texture = chunk.get_texture();
+        let texture = chunk.get_texture(&self.cells_template);
 
         const BG_COLOR_1: Color = Color::new(0.4, 0.4, 0.4, 1.0);
         const BG_COLOR_2: Color = Color::new(0.7, 0.7, 0.7, 1.0);
@@ -127,7 +136,7 @@ impl GameState {
 
     pub fn on_frame(&mut self) {
         for _ in 0..self.ticks_per_frame {
-            self.last_chunks_updated = self.world.update_state();
+            self.last_chunks_updated = self.world.update_state(&self.cells_template);
         }
 
         self.camera.resize(vec2(screen_width(), screen_height()));
@@ -222,22 +231,26 @@ impl GameState {
 
         let position = self.world_mouse_position();
 
-        let selected_cell_name = self.cell_variants[self.selected_cell];
-        let cell = CELLS
+        let selected_cell_name = &self.cell_variants[self.selected_cell];
+        let cell = self
+            .cells_template
+            .cells
             .iter()
-            .find(|cell| cell.name == selected_cell_name)
+            .find(|cell| cell.label == *selected_cell_name)
             .expect("Cell not found");
 
         match self.spawn_mode {
             SpawnMode::Single => {
-                self.world.set_cell(position, cell.init());
+                self.world
+                    .set_cell(position, cell.init(), &self.cells_template);
             }
             SpawnMode::Brush => {
                 let radius = 1;
                 for y in -radius..=radius {
                     for x in -radius..=radius {
                         let position = position + RelativePos::new(x, y);
-                        self.world.set_cell(position, cell.init());
+                        self.world
+                            .set_cell(position, cell.init(), &self.cells_template);
                     }
                 }
             }
@@ -256,9 +269,11 @@ impl GameState {
             }};
         }
 
+        let text_color = WHITE;
+
         macro_rules! draw_debug_line(
             ($($arg:tt)*) => {
-                draw_text_shadow(&format!($( $arg )*), x, next_y!(), regular_font_size, WHITE);
+                draw_text_shadow(&format!($( $arg )*), x, next_y!(), regular_font_size, text_color);
             };
         );
 
@@ -267,7 +282,7 @@ impl GameState {
         // draw_text(&fps, x, next_y!(), 16.0, WHITE);
         draw_debug_line!("FPS: {fps}");
 
-        let selected_cell = self.cell_variants[self.selected_cell];
+        let selected_cell = &self.cell_variants[self.selected_cell];
         draw_debug_line!("Cell to spawn (left/right to change): {selected_cell}");
 
         draw_debug_line!(
@@ -307,7 +322,7 @@ impl GameState {
             let scale = self.camera.cell_size.powi(2);
             let scale = scale + (mouse_wheel * 0.1);
             let new_size = scale.sqrt();
-            self.camera.cell_size = new_size.max(0.1).min(10.0);
+            self.camera.cell_size = new_size.max(0.6).min(10.0);
         }
     }
 }
