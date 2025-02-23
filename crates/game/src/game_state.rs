@@ -230,16 +230,6 @@ impl GameState {
 
         match self.spawn_mode {
             SpawnMode::Single => {
-                println!(
-                    "spawn at: {:?}\n({}, {})\n\t{:?}\n\t{:?}",
-                    position,
-                    position.x(),
-                    position.y(),
-                    self.camera.screen_pos_to_world_pos(mouse_position().into()),
-                    self.camera
-                        .screen_pos_to_world_pos(mouse_position().into())
-                        .floor()
-                );
                 self.world.set_cell(position, cell.init());
             }
             SpawnMode::Circle => {
