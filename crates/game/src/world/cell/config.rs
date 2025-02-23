@@ -77,12 +77,22 @@ pub enum CellRule {
         condition: RuleCondition,
         action: RuleAction,
     },
+    /// Swap current cell with cell at position if it has specific id
+    SwapWithIds {
+        pos: RelativePos,
+        match_ids: &'static [CellId],
+    },
     /// Even if rule applied, continue processing other rules.
     ApplyAndContinue(&'static CellRule),
     /// Rules will be checked in order they are provided and first matching rule will be executed.
     FirstSuccess(&'static [CellRule]),
     /// Pair of rules will be checked in random order and first matching rule will be executed.
     RandomPair(&'static CellRule, &'static CellRule),
+    /// Try to apply same rule twice: as is and mirrored by X axis. Randomly choose which one to
+    /// apply first.
+    SymmetryX(&'static CellRule),
+    /// Same as [`CellRule::SymmetryX`] but mirrored by Y axis.
+    SymmetryY(&'static CellRule),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

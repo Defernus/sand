@@ -25,35 +25,14 @@ pub const CELL_SAND: CellConfig = CellConfig {
     initial_register_values: [0; CELL_REGISTERS_COUNT],
     name: "Sand",
     rule: CellRule::FirstSuccess(&[
-        CellRule::Conditioned {
-            condition: RuleCondition::RelativeCellIn {
-                pos: RelativePos::new(0, -1),
-                cell_id_list: &[CELL_VACUUM.id, CELL_WATER.id],
-            },
-            action: RuleAction::SwapWith {
-                pos: RelativePos::new(0, -1),
-            },
+        CellRule::SwapWithIds {
+            pos: RelativePos::down(),
+            match_ids: &[CELL_VACUUM.id, CELL_WATER.id],
         },
-        CellRule::RandomPair(
-            &CellRule::Conditioned {
-                condition: RuleCondition::RelativeCellIn {
-                    pos: RelativePos::new(-1, -1),
-                    cell_id_list: &[CELL_VACUUM.id, CELL_WATER.id],
-                },
-                action: RuleAction::SwapWith {
-                    pos: RelativePos::new(-1, -1),
-                },
-            },
-            &CellRule::Conditioned {
-                condition: RuleCondition::RelativeCellIn {
-                    pos: RelativePos::new(1, -1),
-                    cell_id_list: &[CELL_VACUUM.id, CELL_WATER.id],
-                },
-                action: RuleAction::SwapWith {
-                    pos: RelativePos::new(1, -1),
-                },
-            },
-        ),
+        CellRule::SymmetryX(&CellRule::SwapWithIds {
+            pos: RelativePos::down_right(),
+            match_ids: &[CELL_VACUUM.id, CELL_WATER.id],
+        }),
     ]),
 };
 
