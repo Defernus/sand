@@ -395,3 +395,57 @@ fn get_absolute_cell_pos(cell_index: usize, dst_relative_pos: RelativePos) -> Ab
 
     AbsoluteCellPos { index, side }
 }
+
+#[test]
+fn test_get_absolute_cell_pos() {
+    let center = get_absolute_cell_pos(0, RelativePos::self_pos());
+    assert_eq!(center, AbsoluteCellPos::central(0));
+
+    let left_top = get_absolute_cell_pos(0, RelativePos::new(-1, 1));
+    assert_eq!(
+        left_top,
+        AbsoluteCellPos {
+            index: CHUNK_SIZE - 1 + CHUNK_SIZE,
+            side: Side {
+                horizontal: HorizontalSide::Left,
+                vertical: VerticalSide::Center
+            }
+        }
+    );
+
+    let right_bottom = get_absolute_cell_pos(0, RelativePos::new(1, -1));
+    assert_eq!(
+        right_bottom,
+        AbsoluteCellPos {
+            index: 1 + CHUNK_SIZE * (CHUNK_SIZE - 1),
+            side: Side {
+                horizontal: HorizontalSide::Center,
+                vertical: VerticalSide::Bottom
+            }
+        }
+    );
+
+    let right_bottom = get_absolute_cell_pos(0, RelativePos::new(3, -1));
+    assert_eq!(
+        right_bottom,
+        AbsoluteCellPos {
+            index: 3 + CHUNK_SIZE * (CHUNK_SIZE - 1),
+            side: Side {
+                horizontal: HorizontalSide::Center,
+                vertical: VerticalSide::Bottom
+            }
+        }
+    );
+
+    let left = get_absolute_cell_pos(0, RelativePos::new(-1, 0));
+    assert_eq!(
+        left,
+        AbsoluteCellPos {
+            index: CHUNK_SIZE - 1,
+            side: Side {
+                horizontal: HorizontalSide::Left,
+                vertical: VerticalSide::Center
+            }
+        }
+    );
+}

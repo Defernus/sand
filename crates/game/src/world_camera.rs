@@ -41,10 +41,10 @@ impl WorldCamera {
     }
 
     /// Returns cell position at the screen coordinates
-    pub fn screen_cord_to_global_pos(&self, pos: Vec2) -> GlobalCellPos {
-        let pos = self.screen_pos_to_world_pos(pos);
+    pub fn screen_cord_to_global_pos(&self, screen_pos: Vec2) -> GlobalCellPos {
+        let world_pos = self.screen_pos_to_world_pos(screen_pos);
 
-        GlobalCellPos::new(pos.x.floor() as i32, pos.y.floor() as i32)
+        world_pos_to_global_pos(world_pos)
     }
 
     pub fn chunk_pos_to_screen_cord(&self, pos: ChunkPos) -> Vec2 {
@@ -81,4 +81,30 @@ impl WorldCamera {
     pub fn max_world_pos(&self) -> Vec2 {
         self.screen_pos_to_world_pos(vec2(self.screen_size.x, 0.0))
     }
+}
+
+pub fn world_pos_to_global_pos(mut world_pos: Vec2) -> GlobalCellPos {
+    world_pos.x = world_pos.x.floor();
+    world_pos.y = world_pos.y.floor();
+
+    let x_cord = world_pos.x as i32;
+    let y_cord = world_pos.y as i32;
+
+    GlobalCellPos::new(x_cord, y_cord)
+}
+
+#[test]
+fn test_world_pos_to_global_pos() {
+    assert_eq!(
+        world_pos_to_global_pos(vec2(0.0, 0.0)),
+        GlobalCellPos::new(0, 0)
+    );
+    assert_eq!(
+        world_pos_to_global_pos(vec2(0.0, 0.9)),
+        GlobalCellPos::new(0, 0)
+    );
+    assert_eq!(
+        world_pos_to_global_pos(vec2(-(CHUNK_SIZE as f32), -0.1)),
+        GlobalCellPos::new(-(CHUNK_SIZE as i32), -1)
+    );
 }

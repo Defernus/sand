@@ -134,6 +134,7 @@ impl GameState {
 
         let dt = get_frame_time();
 
+        self.handle_change_scale();
         self.handle_tick_speed_selection();
         self.handle_cell_selection();
         self.handle_spawn_cells();
@@ -204,6 +205,12 @@ impl GameState {
         }
     }
 
+    pub fn world_mouse_position(&self) -> GlobalCellPos {
+        let (x, y) = mouse_position();
+
+        self.camera.screen_cord_to_global_pos(vec2(x, y))
+    }
+
     pub fn handle_spawn_cells(&mut self) {
         let condition = match self.spawn_mode {
             SpawnMode::Single => is_mouse_button_pressed(MouseButton::Left),
@@ -213,9 +220,7 @@ impl GameState {
             return;
         }
 
-        let (x, y) = mouse_position();
-
-        let position = self.camera.screen_cord_to_global_pos(vec2(x, y));
+        let position = self.world_mouse_position();
 
         let selected_cell_name = self.cell_variants[self.selected_cell];
         let cell = CELLS
@@ -225,12 +230,22 @@ impl GameState {
 
         match self.spawn_mode {
             SpawnMode::Single => {
+                println!(
+                    "spawn at: {:?}\n({}, {})\n\t{:?}\n\t{:?}",
+                    position,
+                    position.x(),
+                    position.y(),
+                    self.camera.screen_pos_to_world_pos(mouse_position().into()),
+                    self.camera
+                        .screen_pos_to_world_pos(mouse_position().into())
+                        .floor()
+                );
                 self.world.set_cell(position, cell.init());
             }
             SpawnMode::Circle => {
-                let radius = 5;
-                for x in -radius..=radius {
-                    for y in -radius..=radius {
+                let radius = 1;
+                for y in -radius..=radius {
+                    for x in -radius..=radius {
                         let position = position + RelativePos::new(x, y);
                         self.world.set_cell(position, cell.init());
                     }
@@ -241,6 +256,7 @@ impl GameState {
 
     pub fn draw_debug_text(&self) {
         let x = 10.0;
+        let regular_font_size = 16.0;
 
         let mut y = 00.0;
         macro_rules! next_y {
@@ -250,54 +266,58 @@ impl GameState {
             }};
         }
 
+        macro_rules! draw_debug_line(
+            ($($arg:tt)*) => {
+                draw_text_shadow(&format!($( $arg )*), x, next_y!(), regular_font_size, WHITE);
+            };
+        );
+
         let fps = get_fps();
         let fps = format!("FPS: {fps}");
-        draw_text(&fps, x, next_y!(), 16.0, WHITE);
+        // draw_text(&fps, x, next_y!(), 16.0, WHITE);
+        draw_debug_line!("FPS: {fps}");
 
         let selected_cell = self.cell_variants[self.selected_cell];
-        let selected_cell = format!("Cell to spawn (left/right to change): {selected_cell}");
-        draw_text(&selected_cell, x, next_y!(), 16.0, WHITE);
+        draw_debug_line!("Cell to spawn (left/right to change): {selected_cell}");
 
-        let ticks_per_frame = format!(
+        draw_debug_line!(
             "Ticks per frame (up/down to change): {}",
             self.ticks_per_frame
         );
-        draw_text(&ticks_per_frame, x, next_y!(), 16.0, WHITE);
 
-        draw_text(
-            &format!("Chunks drawn: {}", self.last_chunks_drawn),
-            x,
-            next_y!(),
-            16.0,
-            WHITE,
-        );
+        draw_debug_line!("Chunks drawn: {}", self.last_chunks_drawn);
 
-        draw_text(
-            &format!("Chunks updated: {}", self.last_chunks_updated),
-            x,
-            next_y!(),
-            16.0,
-            WHITE,
-        );
+        draw_debug_line!("Chunks updated: {}", self.last_chunks_updated);
 
-        draw_text(
-            &format!("Chunks loaded: {}", self.world.len()),
-            x,
-            next_y!(),
-            16.0,
-            WHITE,
-        );
+        draw_debug_line!("Chunks loaded: {}", self.world.len());
 
         let (min, max) = self.camera.get_screen_chunks_area();
-        draw_text(
-            &format!(
-                "Screen chunks: ({}, {}) - ({}, {})",
-                min.x, min.y, max.x, max.y
-            ),
-            x,
-            next_y!(),
-            16.0,
-            WHITE,
+        draw_debug_line!(
+            "Screen chunks: ({}, {}) - ({}, {})",
+            min.x,
+            min.y,
+            max.x,
+            max.y
         );
+
+        let mouse_pos = self.world_mouse_position();
+        draw_debug_line!("Mouse pos: ({}, {})", mouse_pos.x(), mouse_pos.y());
+
+        // chunk and cell position
+        draw_debug_line!("Chunk pos: ({}, {})", mouse_pos.chunk.x, mouse_pos.chunk.y);
+        draw_debug_line!("Cell pos: ({}, {})", mouse_pos.cell.x, mouse_pos.cell.y);
+
+        draw_debug_line!("Spawn mode: {:?}", self.spawn_mode);
+    }
+
+    pub fn handle_change_scale(&mut self) {
+        let mouse_wheel = mouse_wheel().1;
+
+        if mouse_wheel != 0.0 {
+            let scale = self.camera.cell_size.powi(2);
+            let scale = scale + (mouse_wheel * 0.1);
+            let new_size = scale.sqrt();
+            self.camera.cell_size = new_size.max(0.1).min(10.0);
+        }
     }
 }

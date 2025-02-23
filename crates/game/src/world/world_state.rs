@@ -1,4 +1,5 @@
 use crate::*;
+use macroquad::input::mouse_position;
 use nohash_hasher::IntMap;
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
@@ -49,8 +50,8 @@ impl WorldState {
                 .iter()
                 .filter_map(|(&pos, chunk)| {
                     if chunk.should_update
-                        && pos.x.rem_euclid(3) == x_rem
-                        && pos.y.rem_euclid(3) == y_rem
+                        && true_mod(pos.x, 3) == x_rem
+                        && true_mod(pos.y, 3) == y_rem
                     {
                         Some(pos)
                     } else {

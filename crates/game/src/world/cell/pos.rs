@@ -1,4 +1,6 @@
 use crate::*;
+use macroquad::math::vec2;
+use std::ops::Rem;
 
 pub type CellCord = u16;
 
@@ -57,31 +59,43 @@ pub struct GlobalCellPos {
 }
 
 impl GlobalCellPos {
-    pub fn new(x: i32, y: i32) -> Self {
-        let mut chunk = ChunkPos::new(x / CHUNK_SIZE as i32, y / CHUNK_SIZE as i32);
-        if x < 0 {
-            chunk.x -= 1;
-        }
-        if y < 0 {
-            chunk.y -= 1;
-        }
+    pub fn new(mut x: i32, mut y: i32) -> Self {
+        let (chunk_x, cell_x) = if x < 0 {
+            (
+                (x + 1) / CHUNK_SIZE as i32 - 1,
+                true_mod(x, CHUNK_SIZE as i32),
+            )
+        } else {
+            (x / CHUNK_SIZE as i32, x % CHUNK_SIZE as i32)
+        };
+        let (chunk_y, cell_y) = if y < 0 {
+            (
+                (y + 1) / CHUNK_SIZE as i32 - 1,
+                true_mod(y, CHUNK_SIZE as i32),
+            )
+        } else {
+            (y / CHUNK_SIZE as i32, y % CHUNK_SIZE as i32)
+        };
 
-        let cell = CellPos::new(
-            (x.rem_euclid(CHUNK_SIZE as i32)) as CellCord,
-            (y.rem_euclid(CHUNK_SIZE as i32)) as CellCord,
-        );
+        let chunk = ChunkPos::new(chunk_x, chunk_y);
+
+        let cell = CellPos::new(cell_x as CellCord, cell_y as CellCord);
 
         Self { chunk, cell }
     }
 
     #[inline(always)]
     pub fn x(&self) -> i32 {
-        self.chunk.x * CHUNK_SIZE as i32 + self.cell.x as i32
+        let mut res = self.chunk.x * CHUNK_SIZE as i32 + self.cell.x as i32;
+
+        res
     }
 
     #[inline(always)]
     pub fn y(&self) -> i32 {
-        self.chunk.y * CHUNK_SIZE as i32 + self.cell.y as i32
+        let mut res = self.chunk.y * CHUNK_SIZE as i32 + self.cell.y as i32;
+
+        res
     }
 }
 
@@ -103,11 +117,14 @@ fn test_chunk_pos_to_index() {
 
 #[test]
 fn test_global_cell_pos() {
-    let x = CHUNK_SIZE as i32 * 3 + 5;
-    let y = CHUNK_SIZE as i32 * 2 + 13;
+    for x in -(CHUNK_SIZE as i32) * 3..(CHUNK_SIZE as i32) * 3 {
+        for y in -(CHUNK_SIZE as i32) * 3..(CHUNK_SIZE as i32) * 3 {
+            let pos = GlobalCellPos::new(x, y);
 
-    let global_pos = GlobalCellPos::new(x, y);
+            assert_eq!(pos.x(), x);
+            assert_eq!(pos.y(), y);
 
-    assert_eq!(global_pos.chunk, ChunkPos::new(3, 2));
-    assert_eq!(global_pos.cell, CellPos::new(5, 13));
+            assert_eq!(GlobalCellPos::new(pos.x(), pos.y()), pos);
+        }
+    }
 }
