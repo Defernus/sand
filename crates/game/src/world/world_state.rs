@@ -1,6 +1,9 @@
 use crate::*;
+use macroquad::math::Vec2;
 use nohash_hasher::IntMap;
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+
+pub const UPDATE_DELTA_TIME: f32 = 1.0 / 20.0;
 
 /// State of the physical simulation of the world.
 pub struct WorldState {
@@ -54,7 +57,7 @@ impl WorldState {
                 .chunks
                 .iter()
                 .filter_map(|(&pos, chunk)| {
-                    if chunk.should_update
+                    if chunk.should_update()
                         && true_mod(pos.x, 3) == x_rem
                         && true_mod(pos.y, 3) == y_rem
                     {
@@ -86,6 +89,7 @@ impl WorldState {
                         right_top: self.take_chunk(chunk_pos.right_top(), cells_template),
                         left_bottom: self.take_chunk(chunk_pos.left_bottom(), cells_template),
                         right_bottom: self.take_chunk(chunk_pos.right_bottom(), cells_template),
+                        delta_time: UPDATE_DELTA_TIME,
                     },
                     chunk_pos,
                 ));
@@ -119,7 +123,51 @@ impl WorldState {
         let chunk = self.ensure_chunk(pos.chunk, cells_template);
         chunk.set_cell(pos.cell, cell);
 
-        chunk.should_update = true;
-        chunk.should_redraw = true;
+        chunk.set_should_update(true);
+        chunk.set_should_redraw(true);
+    }
+
+    pub fn add_particle_rand_vel(
+        &mut self,
+        pos: GlobalCellPos,
+        cell_meta: &CellMeta,
+        cells_template: &CellsTemplate,
+    ) {
+        let vel = Vec2::new(
+            rand::random::<f32>() * 2.0 - 1.0,
+            rand::random::<f32>() * 2.0 - 1.0,
+        ) * 10.0;
+
+        self.add_particle(pos, vel, cell_meta, cells_template);
+    }
+
+    pub fn add_particle(
+        &mut self,
+        pos: GlobalCellPos,
+        vel: Vec2,
+        cell_meta: &CellMeta,
+        cells_template: &CellsTemplate,
+    ) {
+        if cell_meta.replaceable_by_particles {
+            // if vacuum or something just spawn as a cell
+            self.set_cell(pos, cell_meta.init(), cells_template);
+
+            return;
+        }
+
+        let chunk = self.ensure_chunk(pos.chunk, cells_template);
+        let in_chunk_pos = pos.cell.to_vec();
+        let color = cell_meta.color.calculate(chunk, pos.cell.to_index());
+
+        let particle = Particle {
+            cell_id: cell_meta.id,
+            color,
+            age: 0,
+            gravity: cell_meta.particle_gravity,
+            in_chunk_pos,
+            vel,
+        };
+
+        chunk.particles.push(particle);
     }
 }

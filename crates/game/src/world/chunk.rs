@@ -2,8 +2,9 @@ use crate::*;
 use macroquad::prelude::*;
 use std::hash::Hash;
 
-/// Size of the chunk's side
-pub const CHUNK_SIZE: usize = (u8::MAX as usize + 1) / 2;
+pub const CHUNK_SIZE_LOG_2: usize = 7;
+/// Size of the chunk's side. Must be a power of 2 for optimization reasons
+pub const CHUNK_SIZE: usize = 1 << CHUNK_SIZE_LOG_2;
 /// Area of the chunk
 pub const CHUNK_AREA: usize = CHUNK_SIZE * CHUNK_SIZE;
 
@@ -62,12 +63,13 @@ impl ChunkPos {
 
 #[derive(Debug)]
 pub struct Chunk {
+    pub particles: Vec<Particle>,
     data: Box<[Cell; CHUNK_AREA]>,
     next_random: Box<[u64; CHUNK_AREA]>,
     texture: Option<Texture2D>,
     image: Option<Image>,
-    pub should_update: bool,
-    pub should_redraw: bool,
+    should_update: bool,
+    should_redraw: bool,
 }
 
 impl Chunk {
@@ -78,6 +80,7 @@ impl Chunk {
         }
 
         Self {
+            particles: Vec::new(),
             texture: None,
             image: None,
             data: Box::new([cells_template.cells[0].init(); CHUNK_AREA]),
@@ -85,6 +88,32 @@ impl Chunk {
             should_update: false,
             should_redraw: false,
         }
+    }
+
+    #[inline(always)]
+    pub fn set_should_update(&mut self, should_update: bool) {
+        self.should_update = should_update;
+    }
+
+    #[inline(always)]
+    pub fn should_update(&self) -> bool {
+        self.should_update
+    }
+
+    /// Wether this chunk should trigger neighbor chunks update
+    #[inline(always)]
+    pub fn should_update_neighbor(&self) -> bool {
+        self.should_update
+    }
+
+    #[inline(always)]
+    pub fn set_should_redraw(&mut self, should_redraw: bool) {
+        self.should_redraw = should_redraw;
+    }
+
+    #[inline(always)]
+    pub fn should_redraw(&self) -> bool {
+        self.should_redraw || self.particles.len() > 0
     }
 
     /// Get next random value for specific cell
@@ -161,6 +190,17 @@ impl Chunk {
 
                 let color = cell.color(cells_template).calculate(self, cell_index);
                 image.get_image_data_mut()[pixel_y * CHUNK_SIZE + pixel_x] = color;
+            }
+
+            for particle in &self.particles {
+                let pixel_x = particle.in_chunk_pos.x as usize;
+                let pixel_y = particle.in_chunk_pos.y as usize;
+                debug_assert!(pixel_x < CHUNK_SIZE);
+                debug_assert!(pixel_y < CHUNK_SIZE);
+                let pixel_y = CHUNK_SIZE - 1 - pixel_y;
+                let pixel_index = pixel_y * CHUNK_SIZE + pixel_x;
+                image.get_image_data_mut()[pixel_index] = particle.color;
+                // image.get_image_data_mut()[pixel_index] = [255, 0, 255, 255];
             }
 
             self.image = Some(image);

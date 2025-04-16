@@ -18,16 +18,18 @@ impl CellTemplateBuilder {
         }
     }
 
-    pub fn add_cell(&mut self, cell_meta: CellMeta) -> CellId {
+    pub fn add_cell(&mut self, mut cell_meta: CellMeta) -> CellId {
         let id = self.ensure_id_by_label(cell_meta.label.clone());
+        cell_meta.id = id;
         self.cells.insert(id, cell_meta);
         id
     }
 
     /// Ensure that cell with given label will have own unique id.
-    pub fn ensure_id_by_label(&mut self, label: String) -> CellId {
-        *self.id_by_label.entry(label).or_insert_with(|| {
-            let id = self.cells.len() as CellId;
+    pub fn ensure_id_by_label(&mut self, label: impl Into<String>) -> CellId {
+        *self.id_by_label.entry(label.into()).or_insert_with(|| {
+            let id = self.next_id;
+            self.next_id += 1;
             id
         })
     }

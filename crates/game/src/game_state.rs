@@ -43,7 +43,7 @@ impl GameState {
 
             cells_template,
 
-            spawn_mode: SpawnMode::Brush,
+            spawn_mode: SpawnMode::Single,
 
             camera: WorldCamera::new(Vec2::ZERO, 2.0),
 
@@ -124,7 +124,7 @@ impl GameState {
             },
         );
 
-        let text_color = if chunk.should_update { RED } else { WHITE };
+        let text_color = if chunk.should_update() { RED } else { WHITE };
         draw_text(
             &format!("{} {}", chunk_pos.x, chunk_pos.y),
             offset.x + chunk_size.x / 2.0,
@@ -229,6 +229,8 @@ impl GameState {
             return;
         }
 
+        let spawn_particles = is_key_down(KeyCode::LeftControl);
+
         let position = self.world_mouse_position();
 
         let selected_cell_name = &self.cell_variants[self.selected_cell];
@@ -241,16 +243,26 @@ impl GameState {
 
         match self.spawn_mode {
             SpawnMode::Single => {
-                self.world
-                    .set_cell(position, cell.init(), &self.cells_template);
+                if spawn_particles {
+                    self.world
+                        .add_particle_rand_vel(position, cell, &self.cells_template);
+                } else {
+                    self.world
+                        .set_cell(position, cell.init(), &self.cells_template);
+                }
             }
             SpawnMode::Brush => {
                 let radius = 1;
                 for y in -radius..=radius {
                     for x in -radius..=radius {
                         let position = position + RelativePos::new(x, y);
-                        self.world
-                            .set_cell(position, cell.init(), &self.cells_template);
+                        if spawn_particles {
+                            self.world
+                                .add_particle_rand_vel(position, cell, &self.cells_template);
+                        } else {
+                            self.world
+                                .set_cell(position, cell.init(), &self.cells_template);
+                        }
                     }
                 }
             }

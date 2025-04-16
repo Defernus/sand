@@ -1,4 +1,5 @@
 use crate::*;
+use macroquad::math::Vec2;
 
 pub struct ChunkUpdateContext<'a> {
     pub cells_template: &'a CellsTemplate,
@@ -12,6 +13,7 @@ pub struct ChunkUpdateContext<'a> {
     pub right_top: Chunk,
     pub left_bottom: Chunk,
     pub right_bottom: Chunk,
+    pub delta_time: f32,
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -103,32 +105,107 @@ impl<'a> ChunkUpdateContext<'a> {
     /// This function will process only central chunk, but it will also access the surrounding
     /// chunks and in some cases modify them (e.g. sand falling)
     pub fn process(&mut self) {
-        self.center.should_update = false;
+        self.center.set_should_update(false);
 
-        let rev_row = ::rand::random::<bool>();
-        let rev_col = ::rand::random::<bool>();
+        let update_order_mask = ::rand::random::<u32>();
+        let chunk_area_mask = CHUNK_AREA - 1;
 
-        for x in 0..CHUNK_SIZE {
-            for y in 0..CHUNK_SIZE {
-                let index = CellPos {
-                    y: if rev_col { CHUNK_SIZE - 1 - x } else { x } as u16,
-                    x: if rev_row { CHUNK_SIZE - 1 - y } else { y } as u16,
-                }
-                .to_index();
-                self.update_cell(index);
-            }
+        for index in 0..CHUNK_AREA {
+            // randomize index
+            let index = (index ^ update_order_mask as usize) & chunk_area_mask;
+
+            self.update_cell(index);
+        }
+
+        if !self.center.particles.is_empty() {
+            self.center.set_should_redraw(true);
+            self.center.set_should_update(true);
+        }
+        for particle_index in (0..self.center.particles.len()).rev() {
+            self.update_particle(particle_index);
         }
 
         // If chunk updated next frame we need to update surrounding chunks
-        if self.center.should_update {
-            self.bottom.should_update = true;
-            self.top.should_update = true;
-            self.left.should_update = true;
-            self.right.should_update = true;
-            self.left_top.should_update = true;
-            self.right_top.should_update = true;
-            self.left_bottom.should_update = true;
-            self.right_bottom.should_update = true;
+        if self.center.should_update_neighbor() {
+            self.bottom.set_should_update(true);
+            self.top.set_should_update(true);
+            self.left.set_should_update(true);
+            self.right.set_should_update(true);
+            self.left_top.set_should_update(true);
+            self.right_top.set_should_update(true);
+            self.left_bottom.set_should_update(true);
+            self.right_bottom.set_should_update(true);
+        }
+    }
+
+    /// Update particle and move it to another chunk if needed
+    ///
+    /// NOTE: This may affect particles order with indexes greater or equal to `particle_index`.
+    /// **Iterate over particles in reverse order!**
+    fn update_particle(&mut self, particle_index: usize) {
+        debug_assert!(particle_index < self.center.particles.len());
+
+        // TODO place technical cell placeholder on particle position to avoid conflict with other
+        // particles and cells (e.g. sand falling on top of the particle)
+
+        let particle = &mut self.center.particles[particle_index];
+
+        let start_cell_pos = particle.get_cell_pos().unwrap_or_else(|| {
+            panic!(
+                "Particle is outside of the chunk. age: {}, pos: {:?}",
+                particle.age, particle.in_chunk_pos
+            )
+        });
+
+        particle.update_pos(self.delta_time);
+
+        let mut prev_pos = AbsoluteCellPos::central(start_cell_pos.to_index());
+
+        let target_poss = AbsoluteCellPos::from_vec(particle.in_chunk_pos);
+
+        if prev_pos == target_poss {
+            // particle didn't move
+            return;
+        }
+
+        while prev_pos != target_poss {
+            let next_pos = prev_pos.move_towards(target_poss);
+
+            let cell = self.get_cell(next_pos);
+            let cell_meta = self.cells_template.get_cell_meta(cell.id);
+
+            let is_collided = !cell_meta.replaceable_by_particles;
+
+            if is_collided {
+                // replace particle with cell if collided
+                let particle = self.center.particles.swap_remove(particle_index);
+                let particle_cell = self.cells_template.get_cell_meta(particle.cell_id);
+                self.set_cell(prev_pos, particle_cell.init());
+
+                return;
+            }
+
+            prev_pos = next_pos;
+        }
+
+        // if particle is outside of the central chunk we need to move it to the new chunk
+        if !target_poss.is_in_central() {
+            let mut particle = self.center.particles.swap_remove(particle_index);
+            particle.in_chunk_pos -= target_poss.side.chunk_pos_offset_vec();
+
+            if particle.get_cell_pos().is_none() {
+                // TODO fix this: some time particles has coordinates right on the chunk boundary
+                // (e.g. x = 128.0). This is temporary fix to avoid panic.
+                println!(
+                    "!!!!!!!!!! BAD PARTICLE POSITION age: {}, pos: {:?}, target_pos: {:?}",
+                    particle.age, particle.in_chunk_pos, target_poss
+                );
+                particle.in_chunk_pos = target_poss.cell_pos().to_vec();
+            }
+
+            self.get_chunk_mut(target_poss.side)
+                .particles
+                .push(particle);
         }
     }
 
@@ -143,32 +220,52 @@ impl<'a> ChunkUpdateContext<'a> {
         self.try_apply_rule(
             &cell_config.rule,
             cell_index,
-            cell,
             RelativeTransformation::default(),
         );
+    }
+
+    fn calc_value(
+        &self,
+        value: &ConditionArg,
+        cell_index: usize,
+        transformation: RelativeTransformation,
+    ) -> u32 {
+        match value {
+            ConditionArg::Value(v) => *v,
+            ConditionArg::Register { pos, register } => {
+                let pos = get_absolute_cell_pos(cell_index, pos.transform(transformation));
+                self.get_cell(pos).registers[*register as usize]
+            }
+        }
     }
 
     fn try_apply_rule(
         &mut self,
         rule: &CellRule,
         cell_index: usize,
-        cell: Cell,
         transformation: RelativeTransformation,
     ) -> bool {
         match rule {
             CellRule::FirstSuccess(list) => {
                 for rule in list {
-                    if self.try_apply_rule(rule, cell_index, cell, transformation) {
+                    if self.try_apply_rule(rule, cell_index, transformation) {
                         return true;
                     }
                 }
 
                 false
             }
-            CellRule::Conditioned { condition, action } => {
+            CellRule::If {
+                condition,
+                action,
+                else_action,
+            } => {
                 if self.check_condition(condition, cell_index, transformation) {
-                    self.apply_action(action, cell_index, transformation);
-                    return true;
+                    return self.try_apply_rule(action.as_ref(), cell_index, transformation);
+                }
+
+                if let Some(else_action) = else_action {
+                    return self.try_apply_rule(else_action, cell_index, transformation);
                 }
 
                 false
@@ -178,27 +275,13 @@ impl<'a> ChunkUpdateContext<'a> {
                 let random_value = self.center.get_random_value(cell_index);
 
                 if random_value & 1 == 0 {
-                    self.apply_rule_pair(
-                        cell_index,
-                        cell,
-                        rule_a,
-                        transformation,
-                        rule_b,
-                        transformation,
-                    )
+                    self.apply_rule_pair(cell_index, rule_a, transformation, rule_b, transformation)
                 } else {
-                    self.apply_rule_pair(
-                        cell_index,
-                        cell,
-                        rule_b,
-                        transformation,
-                        rule_a,
-                        transformation,
-                    )
+                    self.apply_rule_pair(cell_index, rule_b, transformation, rule_a, transformation)
                 }
             }
             CellRule::ApplyAndContinue(rule) => {
-                self.try_apply_rule(rule, cell_index, cell, transformation);
+                self.try_apply_rule(rule, cell_index, transformation);
                 false
             }
             CellRule::SwapWithIds { pos, match_ids } => {
@@ -218,7 +301,6 @@ impl<'a> ChunkUpdateContext<'a> {
                 if random_value & 1 == 0 {
                     self.apply_rule_pair(
                         cell_index,
-                        cell,
                         rule,
                         transformation,
                         rule,
@@ -227,7 +309,6 @@ impl<'a> ChunkUpdateContext<'a> {
                 } else {
                     self.apply_rule_pair(
                         cell_index,
-                        cell,
                         rule,
                         transformation.mirror_x(),
                         rule,
@@ -241,7 +322,6 @@ impl<'a> ChunkUpdateContext<'a> {
                 if random_value & 1 == 0 {
                     self.apply_rule_pair(
                         cell_index,
-                        cell,
                         rule,
                         transformation,
                         rule,
@@ -250,7 +330,6 @@ impl<'a> ChunkUpdateContext<'a> {
                 } else {
                     self.apply_rule_pair(
                         cell_index,
-                        cell,
                         rule,
                         transformation.mirror_y(),
                         rule,
@@ -264,7 +343,6 @@ impl<'a> ChunkUpdateContext<'a> {
                 if random_value & 1 == 0 {
                     self.apply_rule_pair(
                         cell_index,
-                        cell,
                         rule,
                         transformation,
                         rule,
@@ -273,13 +351,146 @@ impl<'a> ChunkUpdateContext<'a> {
                 } else {
                     self.apply_rule_pair(
                         cell_index,
-                        cell,
                         rule,
                         transformation.mirror_diagonal(),
                         rule,
                         transformation,
                     )
                 }
+            }
+            CellRule::TryAll(list) => {
+                for action in list {
+                    self.try_apply_rule(action, cell_index, transformation);
+                }
+
+                true
+            }
+            CellRule::InitCell { pos, cell_id } => {
+                let pos = get_absolute_cell_pos(cell_index, pos.transform(transformation));
+                self.set_cell(pos, Cell::new(&self.cells_template, *cell_id));
+
+                true
+            }
+            CellRule::SwapWith { pos } => {
+                let pos = get_absolute_cell_pos(cell_index, pos.transform(transformation));
+                self.swap_cells(AbsoluteCellPos::central(cell_index), pos);
+
+                true
+            }
+            CellRule::IncrementRegister { register, pos } => {
+                let register_index = *register as usize;
+                assert!(
+                    register_index < CELL_REGISTERS_COUNT,
+                    "Register out of bounds"
+                );
+                let pos = get_absolute_cell_pos(cell_index, pos.transform(transformation));
+                let mut cell = self.get_cell(pos);
+                cell.registers[register_index] = cell.registers[register_index].wrapping_add(1);
+                self.set_cell(pos, cell);
+
+                true
+            }
+            CellRule::DecrementRegister { register, pos } => {
+                let register_index = *register as usize;
+                assert!(
+                    register_index < CELL_REGISTERS_COUNT,
+                    "Register out of bounds"
+                );
+                let pos = get_absolute_cell_pos(cell_index, pos.transform(transformation));
+                let mut cell = self.get_cell(pos);
+                cell.registers[register_index] = cell.registers[register_index].wrapping_sub(1);
+                self.set_cell(pos, cell);
+
+                true
+            }
+            CellRule::SetRegister {
+                register,
+                value,
+                pos,
+            } => {
+                let register_index = *register as usize;
+                assert!(
+                    register_index < CELL_REGISTERS_COUNT,
+                    "Register out of bounds"
+                );
+                let pos = get_absolute_cell_pos(cell_index, pos.transform(transformation));
+                let mut cell = self.get_cell(pos);
+                cell.registers[register_index] = *value;
+                self.set_cell(pos, cell);
+
+                true
+            }
+            CellRule::MoveRegister {
+                source_register,
+                source_cell,
+                target_register,
+                target_cell,
+            } => {
+                let source_register_index = *source_register as usize;
+                let target_register_index = *target_register as usize;
+                assert!(
+                    source_register_index < CELL_REGISTERS_COUNT,
+                    "Register out of bounds"
+                );
+                assert!(
+                    target_register_index < CELL_REGISTERS_COUNT,
+                    "Register out of bounds"
+                );
+
+                let source_pos =
+                    get_absolute_cell_pos(cell_index, source_cell.transform(transformation));
+                let target_pos =
+                    get_absolute_cell_pos(cell_index, target_cell.transform(transformation));
+
+                let source_cell = self.get_cell(source_pos);
+                let mut target_cell = self.get_cell(target_pos);
+
+                target_cell.registers[target_register_index] =
+                    source_cell.registers[source_register_index];
+
+                self.set_cell(target_pos, target_cell);
+
+                true
+            }
+            CellRule::SerRegisterRandomMasked {
+                register,
+                mask,
+                pos,
+            } => {
+                let register_index = *register as usize;
+                assert!(
+                    register_index < CELL_REGISTERS_COUNT,
+                    "Register out of bounds"
+                );
+
+                let pos = get_absolute_cell_pos(cell_index, pos.transform(transformation));
+                let mut cell = self.get_cell(pos);
+                cell.registers[register_index] =
+                    self.center.get_random_value(cell_index) as u32 & *mask;
+                self.set_cell(pos, cell);
+
+                true
+            }
+            CellRule::MirrorXIf { condition, rule } => {
+                if self.check_condition(condition, cell_index, transformation) {
+                    return self.try_apply_rule(rule, cell_index, transformation.mirror_x());
+                }
+
+                false
+            }
+            CellRule::MirrorYIf { condition, rule } => {
+                if self.check_condition(condition, cell_index, transformation) {
+                    return self.try_apply_rule(rule, cell_index, transformation.mirror_y());
+                }
+
+                false
+            }
+            CellRule::MirrorDiagonalIf { condition, rule } => {
+                if self.check_condition(condition, cell_index, transformation) {
+                    return self.try_apply_rule(rule, cell_index, transformation.mirror_diagonal());
+                }
+
+                false
             }
             CellRule::Idle => true,
         }
@@ -288,17 +499,16 @@ impl<'a> ChunkUpdateContext<'a> {
     fn apply_rule_pair(
         &mut self,
         cell_index: usize,
-        cell: Cell,
         a: &CellRule,
         a_transformation: RelativeTransformation,
         b: &CellRule,
         b_transformation: RelativeTransformation,
     ) -> bool {
-        if self.try_apply_rule(a, cell_index, cell, a_transformation) {
+        if self.try_apply_rule(a, cell_index, a_transformation) {
             return true;
         }
 
-        self.try_apply_rule(b, cell_index, cell, b_transformation)
+        self.try_apply_rule(b, cell_index, b_transformation)
     }
 
     fn check_condition(
@@ -337,132 +547,20 @@ impl<'a> ChunkUpdateContext<'a> {
             RuleCondition::Not(condition) => {
                 !self.check_condition(condition, cell_index, transformation)
             }
-            RuleCondition::RegisterEq {
-                pos,
-                register,
-                value,
-            } => {
-                let pos = get_absolute_cell_pos(cell_index, pos.transform(transformation));
-                let cell = self.get_cell(pos);
-                cell.registers[*register as usize] == *value
-            }
-            RuleCondition::RegisterNotEq {
-                pos,
-                register,
-                value,
-            } => {
-                let pos = get_absolute_cell_pos(cell_index, pos.transform(transformation));
-                let cell = self.get_cell(pos);
-                cell.registers[*register as usize] != *value
-            }
-            RuleCondition::Always => true,
-        }
-    }
+            RuleCondition::BinaryOp { op, a, b } => {
+                let value_a = self.calc_value(a, cell_index, transformation);
+                let value_b = self.calc_value(b, cell_index, transformation);
 
-    fn apply_action(
-        &mut self,
-        action: &RuleAction,
-        cell_index: usize,
-        transformation: RelativeTransformation,
-    ) {
-        match action {
-            RuleAction::OrderedActions(list) => {
-                for action in list {
-                    self.apply_action(action, cell_index, transformation);
+                match op {
+                    ConditionBinaryOp::Eq => value_a == value_b,
+                    ConditionBinaryOp::NotEq => value_a != value_b,
+                    ConditionBinaryOp::Less => value_a < value_b,
+                    ConditionBinaryOp::LessEq => value_a <= value_b,
+                    ConditionBinaryOp::Greater => value_a > value_b,
+                    ConditionBinaryOp::GreaterEq => value_a >= value_b,
                 }
             }
-            RuleAction::InitCell { pos, cell_id } => {
-                let pos = get_absolute_cell_pos(cell_index, pos.transform(transformation));
-                self.set_cell(pos, Cell::new(&self.cells_template, *cell_id));
-            }
-            RuleAction::SwapWith { pos } => {
-                let pos = get_absolute_cell_pos(cell_index, pos.transform(transformation));
-                self.swap_cells(AbsoluteCellPos::central(cell_index), pos);
-            }
-            RuleAction::IncrementRegister { register, pos } => {
-                let register_index = *register as usize;
-                assert!(
-                    register_index < CELL_REGISTERS_COUNT,
-                    "Register out of bounds"
-                );
-                let pos = get_absolute_cell_pos(cell_index, pos.transform(transformation));
-                let mut cell = self.get_cell(pos);
-                cell.registers[register_index] = cell.registers[register_index].wrapping_add(1);
-                self.set_cell(pos, cell);
-            }
-            RuleAction::DecrementRegister { register, pos } => {
-                let register_index = *register as usize;
-                assert!(
-                    register_index < CELL_REGISTERS_COUNT,
-                    "Register out of bounds"
-                );
-                let pos = get_absolute_cell_pos(cell_index, pos.transform(transformation));
-                let mut cell = self.get_cell(pos);
-                cell.registers[register_index] = cell.registers[register_index].wrapping_sub(1);
-                self.set_cell(pos, cell);
-            }
-            RuleAction::SetRegister {
-                register,
-                value,
-                pos,
-            } => {
-                let register_index = *register as usize;
-                assert!(
-                    register_index < CELL_REGISTERS_COUNT,
-                    "Register out of bounds"
-                );
-                let pos = get_absolute_cell_pos(cell_index, pos.transform(transformation));
-                let mut cell = self.get_cell(pos);
-                cell.registers[register_index] = *value;
-                self.set_cell(pos, cell);
-            }
-            RuleAction::MoveRegister {
-                source_register,
-                source_cell,
-                target_register,
-                target_cell,
-            } => {
-                let source_register_index = *source_register as usize;
-                let target_register_index = *target_register as usize;
-                assert!(
-                    source_register_index < CELL_REGISTERS_COUNT,
-                    "Register out of bounds"
-                );
-                assert!(
-                    target_register_index < CELL_REGISTERS_COUNT,
-                    "Register out of bounds"
-                );
-
-                let source_pos =
-                    get_absolute_cell_pos(cell_index, source_cell.transform(transformation));
-                let target_pos =
-                    get_absolute_cell_pos(cell_index, target_cell.transform(transformation));
-
-                let source_cell = self.get_cell(source_pos);
-                let mut target_cell = self.get_cell(target_pos);
-
-                target_cell.registers[target_register_index] =
-                    source_cell.registers[source_register_index];
-
-                self.set_cell(target_pos, target_cell);
-            }
-            RuleAction::SerRegisterRandomMasked {
-                register,
-                mask,
-                pos,
-            } => {
-                let register_index = *register as usize;
-                assert!(
-                    register_index < CELL_REGISTERS_COUNT,
-                    "Register out of bounds"
-                );
-
-                let pos = get_absolute_cell_pos(cell_index, pos.transform(transformation));
-                let mut cell = self.get_cell(pos);
-                cell.registers[register_index] =
-                    self.center.get_random_value(cell_index) as u32 & *mask;
-                self.set_cell(pos, cell);
-            }
+            RuleCondition::Always => true,
         }
     }
 
@@ -538,6 +636,29 @@ struct Side {
     vertical: VerticalSide,
 }
 
+impl Side {
+    fn chunk_pos_offset(self) -> (i16, i16) {
+        let x_offset = match self.horizontal {
+            HorizontalSide::Left => -(CHUNK_SIZE as i16),
+            HorizontalSide::Center => 0,
+            HorizontalSide::Right => CHUNK_SIZE as i16,
+        };
+        let y_offset = match self.vertical {
+            VerticalSide::Top => CHUNK_SIZE as i16,
+            VerticalSide::Center => 0,
+            VerticalSide::Bottom => -(CHUNK_SIZE as i16),
+        };
+
+        (x_offset, y_offset)
+    }
+
+    fn chunk_pos_offset_vec(self) -> Vec2 {
+        let (x_offset, y_offset) = self.chunk_pos_offset();
+        Vec2::new(x_offset as f32, y_offset as f32)
+    }
+}
+
+/// Absolute cell position in the update region
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct AbsoluteCellPos {
     index: usize,
@@ -545,6 +666,7 @@ struct AbsoluteCellPos {
 }
 
 impl AbsoluteCellPos {
+    #[inline(always)]
     fn central(index: usize) -> Self {
         Self {
             index,
@@ -553,6 +675,101 @@ impl AbsoluteCellPos {
                 vertical: VerticalSide::Center,
             },
         }
+    }
+
+    fn cell_pos(self) -> CellPos {
+        CellPos::from_index(self.index)
+    }
+
+    #[inline(always)]
+    fn is_in_central(&self) -> bool {
+        self.side.horizontal == HorizontalSide::Center && self.side.vertical == VerticalSide::Center
+    }
+
+    #[inline(always)]
+    fn from_vec(pos: Vec2) -> Self {
+        let x = if pos.x < 0.0 {
+            pos.x.floor() as i16
+        } else {
+            pos.x as i16
+        };
+        let y = if pos.y < 0.0 {
+            pos.y.floor() as i16
+        } else {
+            pos.y as i16
+        };
+
+        Self::from_cords(x, y)
+    }
+
+    #[inline(always)]
+    fn from_cords(x: i16, y: i16) -> Self {
+        const CHUNK_SIZE_I: i16 = CHUNK_SIZE as i16;
+        assert!(
+            x > -CHUNK_SIZE_I && x < CHUNK_SIZE_I * 2,
+            "x out of bounds: {}",
+            x
+        );
+        assert!(
+            y > -CHUNK_SIZE_I && y < CHUNK_SIZE_I * 2,
+            "y out of bounds: {}",
+            y
+        );
+
+        let (norm_x, h_side) = if x < 0 {
+            (x + CHUNK_SIZE_I, HorizontalSide::Left)
+        } else if x < CHUNK_SIZE_I {
+            (x, HorizontalSide::Center)
+        } else {
+            (x - CHUNK_SIZE_I, HorizontalSide::Right)
+        };
+        let (norm_y, v_size) = if y < 0 {
+            (y + CHUNK_SIZE_I, VerticalSide::Bottom)
+        } else if y < CHUNK_SIZE_I {
+            (y, VerticalSide::Center)
+        } else {
+            (y - CHUNK_SIZE_I, VerticalSide::Top)
+        };
+
+        AbsoluteCellPos {
+            index: CellPos::new(norm_x as CellCord, norm_y as CellCord).to_index(),
+            side: Side {
+                horizontal: h_side,
+                vertical: v_size,
+            },
+        }
+    }
+
+    #[inline(always)]
+    fn to_cord(self) -> (i16, i16) {
+        let cell_pos = CellPos::from_index(self.index);
+        let x = cell_pos.x as i16;
+        let y = cell_pos.y as i16;
+
+        let x = match self.side.horizontal {
+            HorizontalSide::Left => x - CHUNK_SIZE as i16,
+            HorizontalSide::Center => x,
+            HorizontalSide::Right => x + CHUNK_SIZE as i16,
+        };
+
+        let y = match self.side.vertical {
+            VerticalSide::Top => y + CHUNK_SIZE as i16,
+            VerticalSide::Center => y,
+            VerticalSide::Bottom => y - CHUNK_SIZE as i16,
+        };
+
+        (x, y)
+    }
+
+    #[inline(always)]
+    fn move_towards(self, target: Self) -> Self {
+        let (x, y) = self.to_cord();
+        let (target_x, target_y) = target.to_cord();
+
+        let new_x = move_towards(x, target_x);
+        let new_y = move_towards(y, target_y);
+
+        AbsoluteCellPos::from_cords(new_x, new_y)
     }
 }
 
@@ -639,4 +856,16 @@ fn test_get_absolute_cell_pos() {
             }
         }
     );
+}
+
+/// Move value towards target by 1
+#[inline(always)]
+fn move_towards(value: i16, target: i16) -> i16 {
+    if value < target {
+        value + 1
+    } else if value > target {
+        value - 1
+    } else {
+        value
+    }
 }

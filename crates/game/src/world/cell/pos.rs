@@ -1,4 +1,5 @@
 use crate::*;
+use macroquad::math::Vec2;
 
 pub type CellCord = u16;
 
@@ -47,6 +48,10 @@ impl CellPos {
         );
 
         self.x as usize + self.y as usize * CHUNK_SIZE
+    }
+
+    pub fn to_vec(&self) -> Vec2 {
+        Vec2::new(self.x as f32, self.y as f32)
     }
 }
 
